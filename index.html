@@ -1,0 +1,4654 @@
+<!doctype html>
+<html>
+  <head>
+    <title>Sargassum Classifier</title>
+
+    <!-- Montserrat font -->
+    <link
+      href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700&display=swap"
+      rel="stylesheet"
+    />
+
+    <!-- ML libs -->
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@latest/dist/tf.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@teachablemachine/image@latest/dist/teachablemachine-image.min.js"></script>
+
+    <!-- Chart.js for dashboard graphs -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+    <!-- SheetJS (XLSX export) -->
+    <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+
+    <!-- Leaflet for map view -->
+    <link
+      rel="stylesheet"
+      href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+      crossorigin=""
+    />
+    <script
+      src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+      crossorigin=""
+    ></script>
+
+    <style>
+      /* ---------- Global layout / theme ---------- */
+      body {
+        margin: 0;
+        padding: 0;
+        min-height: 100vh;
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        font-family: "Montserrat", system-ui, -apple-system, BlinkMacSystemFont,
+          "Segoe UI", sans-serif;
+        color: #f5f7ff;
+
+        background:
+          linear-gradient(
+            to bottom,
+            rgba(0, 0, 0, 0.15),
+            rgba(0, 0, 0, 0.35)
+          ),
+          url("background.png") center center / cover no-repeat fixed;
+      }
+
+      /* ---------- LEFT MENU ---------- */
+      .side-menu {
+        position: fixed;
+        top: 0;
+        left: 0;
+        bottom: 0;
+        width: 72px;
+        background: rgba(0, 0, 0, 0.96);
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        padding: 16px 0;
+        box-shadow: 4px 0 18px rgba(0, 0, 0, 0.7);
+        z-index: 10;
+      }
+
+      .side-menu-logo {
+        width: 30px;
+        height: 30px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+      }
+
+      .side-logo-img {
+        width: 35px;
+        height: 35px;
+        object-fit: contain;
+        filter: drop-shadow(0 0 6px rgba(0,0,0,0.6));
+      }
+
+      /* main icons column */
+      .side-menu-items {
+        margin-top: 32px;
+        display: flex;
+        flex-direction: column;
+        gap: 18px;
+        flex-grow: 1;   /* pushes bottom section down */
+      }
+
+      /* bottom area for settings */
+      .side-menu-bottom {
+        margin-top: auto;
+        padding-top: 16px;
+      }
+
+      .side-menu-item {
+        width: 40px;
+        height: 40px;
+        border: none;
+        background: transparent;
+        box-shadow: none;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        cursor: pointer;
+      }
+
+      .side-menu-item:hover {
+        background: transparent;
+        transform: translateY(-1px);
+      }
+
+      .side-menu-item.active {
+        background: transparent;
+        box-shadow: none;
+      }
+
+      .side-menu-icon-img {
+        width: 40px;
+        height: 40px;
+        display: block;
+      }
+
+      /* make ONLY the gallery icon smaller */
+      .side-menu-item[data-action="gallery"] .side-menu-icon-img {
+        width: 30px;
+        height: 30px;
+      }
+
+      /* Default: show white icon, hide green icon */
+      .side-menu-item .icon-active {
+        display: none;
+      }
+
+      /* Active: hide white, show green */
+      .side-menu-item.active .icon-idle {
+        display: none;
+      }
+      .side-menu-item.active .icon-active {
+        display: block;
+      }
+
+      /* ---------- APP WRAPPER ---------- */
+      .app-wrapper {
+        display: flex;
+        flex-direction: column;
+        align-items: stretch;
+        gap: 16px;
+        margin-left: 96px;
+        width: min(1060px, calc(100vw - 120px));
+      }
+
+      /* --- Detail modal: mini prediction bars --- */
+      .detail-bars {
+        margin-top: 8px;
+        background: rgba(0,0,0,0.18);
+        border: 1px solid rgba(255,255,255,0.08);
+        border-radius: 12px;
+        padding: 10px 10px 8px;
+      }
+
+      .detail-bars .prediction-row { margin-bottom: 8px; }
+      .detail-bars .prediction-header {
+        display: flex;
+        justify-content: space-between;
+        font-size: 11px;
+        margin-bottom: 3px;
+        color: #c4ccda;
+      }
+
+      .detail-bars .prediction-header .class-name {
+        font-weight: 600;
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+      }
+
+      .detail-bars .prediction-header .percent { color: #62ab81; }
+      .detail-bars .prediction-bar {
+        width: 100%;
+        height: 6px;
+        border-radius: 999px;
+        background: rgba(255,255,255,0.04);
+        overflow: hidden;
+      }
+
+      .detail-bars .prediction-bar-fill {
+        height: 100%;
+        width: 0%;
+        border-radius: inherit;
+        background: linear-gradient(90deg, #62ab81, #4d916d);
+        box-shadow: 0 0 8px rgba(98,171,129,0.7);
+        transition: width 0.25s ease-out;
+      }
+
+      .card{
+        background: #1e1e1e;                 /* ← bring grey back */
+        backdrop-filter: blur(12px);
+        border-radius: 16px;
+        padding: 20px 22px 18px;
+        box-shadow: 0 22px 50px rgba(0,0,0,0.8);
+      border: 1px solid rgba(255,255,255,0.08);
+      }
+
+      #classifier-view .card {
+        width: 440px;
+        margin: 0 auto;
+      }
+
+      h1 {
+        margin: 0 0 4px;
+        font-size: 22px;
+        font-weight: 700;
+        letter-spacing: 0.05em;
+        text-transform: uppercase;
+      }
+
+      .subtitle {
+        margin: 0 0 18px;
+        font-size: 12px;
+        color: #ffffff;
+        opacity: 0.9;
+      }
+
+      .upload-wrapper {
+        margin-bottom: 14px;
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+      }
+
+      .file-input-label {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        gap: 6px;
+        padding: 9px 14px;
+        border-radius: 999px;
+        background: #62ab81;
+        color: #020509;
+        font-size: 13px;
+        font-weight: 600;
+        cursor: pointer;
+        border: none;
+        outline: none;
+
+        box-shadow: 0 10px 28px rgba(0, 0, 0, 0.7);
+        transition: transform 0.08s ease, box-shadow 0.08s ease, opacity 0.12s;
+      }
+
+      .file-input-label:hover {
+        transform: translateY(-1px);
+        box-shadow: 0 14px 32px rgba(98, 171, 129, 0.35);
+        opacity: 0.96;
+      }
+
+      #imageUpload {
+        display: none;
+      }
+
+      .helper-text {
+        font-size: 11px;
+        color: #ffffff;
+        opacity: 0.9;
+      }
+
+      /* fixed-size frame for preview image */
+      .preview-frame {
+        width: 100%;
+        max-width: 100%;
+        height: 260px;
+        border-radius: 10px;
+        margin-bottom: 14px;
+        overflow: hidden;
+        box-shadow: 0 12px 32px rgba(0, 0, 0, 0.9);
+        border: 1px solid rgba(70, 86, 112, 0.8);
+        display: none;
+        background: #000;
+      }
+
+      #preview {
+        width: 100%;
+        height: 100%;
+        display: block;
+        object-fit: cover;
+      }
+
+      #label-container {
+        background: rgba(5, 9, 15, 0.98);
+        border-radius: 10px;
+        padding: 10px 10px 6px;
+        border: 1px solid #696969;
+      }
+
+      .prediction-row {
+        margin-bottom: 8px;
+      }
+
+      .prediction-header {
+        display: flex;
+        justify-content: space-between;
+        font-size: 11px;
+        margin-bottom: 3px;
+        color: #c4ccda;
+      }
+
+      .prediction-header .class-name {
+        font-weight: 600;
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+      }
+
+      .prediction-header .percent {
+        color: #62ab81;
+      }
+
+      .prediction-bar {
+        width: 100%;
+        height: 6px;
+        border-radius: 999px;
+        background: rgba(255, 255, 255, 0.04);
+        overflow: hidden;
+      }
+
+      .prediction-bar-fill {
+        height: 100%;
+        width: 0%;
+        border-radius: inherit;
+        background: linear-gradient(90deg, #62ab81, #4d916d);
+        box-shadow: 0 0 8px rgba(98, 171, 129, 0.7);
+        transition: width 0.25s ease-out;
+      }
+
+      .footer-note {
+        margin-top: 8px;
+        font-size: 10px;
+        text-align: right;
+        color: #ffffff;
+        opacity: 0.85;
+      }
+
+      @media (max-width: 820px) {
+        .app-wrapper {
+          width: calc(100vw - 120px);
+        }
+      }
+
+      @media (max-width: 520px) {
+        .card {
+          width: 90vw;
+          padding: 20px 18px 16px;
+        }
+        .app-wrapper {
+          margin-left: 80px;
+        }
+        .settings-content {
+          width: 90vw;
+        }
+      }
+
+      /* ---------------- SETTINGS ---------------- */
+      .settings-modal {
+        position: fixed;
+        inset: 0;
+        background: rgba(0,0,0,0.7);
+        display: none;
+        justify-content: center;
+        align-items: center;
+        z-index: 500;
+      }
+
+      .settings-content {
+        width: 440px;
+        background: #1e1e1e;
+        padding: 24px 24px 20px;
+        border-radius: 14px;
+        border: 2px solid #696969;
+        color: white;
+        box-shadow: 0 22px 50px rgba(0,0,0,0.8);
+        animation: fadeIn 0.25s ease-out;
+      }
+
+      .setting-row {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin: 14px 0;
+        font-size: 14px;
+        gap: 8px;
+      }
+
+      .setting-row select {
+        background: #131313;
+        color: #f5f5f5;
+        border-radius: 6px;
+        border: 1px solid #3b3b3b;
+        padding: 4px 8px;
+        font-family: inherit;
+        font-size: 13px;
+      }
+
+      .close-settings-btn {
+        margin-top: 18px;
+        width: 100%;
+        padding: 8px 0;
+        border-radius: 8px;
+        background: #62ab81;
+        color: black;
+        border: none;
+        cursor: pointer;
+        font-weight: 600;
+      }
+
+      @keyframes fadeIn {
+        from { opacity: 0; transform: scale(0.96); }
+        to   { opacity: 1; transform: scale(1); }
+      }
+      /* ---------------- END SETTINGS ---------------- */
+
+      /* ---------- DASHBOARD VIEW LAYOUT ---------- */
+      .dash-actions{
+        display:flex;
+        justify-content:flex-end;
+        margin-bottom: 10px;
+      }
+
+      .download-btn{
+        border: none;
+        border-radius: 999px;
+        padding: 8px 14px;
+        background: #62ab81;
+        color: #020509;
+        font-size: 12px;
+        font-weight: 900;
+        cursor: pointer;
+        box-shadow: 0 12px 26px rgba(0,0,0,0.55);
+      }
+
+      .download-btn:hover{
+        opacity: 0.96;
+        transform: translateY(-1px);
+      }
+
+      #dashboard-view {
+        margin-top: 40px;
+      }
+      #dashboard-view h1 {
+        font-size: 20px;
+      }
+
+      .dash-layout {
+        display: grid;
+        grid-template-rows: auto auto auto;
+        gap: 16px;
+      }
+
+      .dash-top-cards {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 16px;
+      }
+
+      .metric-card {
+        background: #1e1e1e;
+        border-radius: 14px;
+        padding: 14px 16px;
+        border: 1px solid #3b3f48;
+        box-shadow: 0 12px 24px rgba(0,0,0,0.35);
+      }
+
+      .metric-label {
+        font-size: 11px;
+        text-transform: uppercase;
+        letter-spacing: .08em;
+        opacity: .8;
+      }
+
+      .metric-value {
+        margin-top: 6px;
+        font-size: 20px;
+        font-weight: 700;
+        color: #62ab81;
+      }
+
+      .metric-sub {
+        margin-top: 2px;
+        font-size: 11px;
+        opacity: .7;
+      }
+
+      .dash-main-row {
+        display: flex;
+        gap: 16px;
+        align-items: flex-start;
+      }
+
+      .dash-large-card {
+        flex: 2;
+        min-height: 220px;
+      }
+
+      .dash-side-column {
+        flex: 1;
+        display: flex;
+        flex-direction: column;
+        gap: 16px;
+      }
+
+      .card-title-small {
+        font-size: 13px;
+        font-weight: 600;
+        margin: 0 0 8px;
+      }
+
+      .dash-bottom-row {
+        display: grid;
+        grid-template-columns: 2fr 2fr 1.4fr;
+        gap: 16px;
+      }
+
+      .dash-bottom-row canvas {
+        max-height: 160px;
+      }
+
+      /* ✅ Dashboard charts: let the card control height (prevents stretching) */
+      #dashboard-view canvas{
+        width: 100% !important;
+        height: 100% !important;
+        display: block;
+      }
+
+      /* Give the cards predictable heights (like v13) */
+      .dash-large-card{
+        min-height: 260px;
+      }
+      .dash-large-card canvas{
+        height: 220px !important;
+      }
+
+      .dash-bottom-row .card{
+        min-height: 200px;
+      }
+      .dash-bottom-row .card canvas{
+        height: 160px !important;
+      }
+
+      .index-value {
+        font-size: 32px;
+        font-weight: 700;
+        margin: 6px 0 4px;
+      }
+
+      .index-caption {
+        font-size: 11px;
+        opacity: 0.8;
+      }
+
+      .index-pill {
+        display: inline-flex;
+        align-items: center;
+        padding: 4px 10px;
+        border-radius: 999px;
+        font-size: 10px;
+        text-transform: uppercase;
+        letter-spacing: .08em;
+        background: rgba(98,171,129,0.15);
+        border: 1px solid rgba(98,171,129,0.45);
+        color: #d7ffe7;
+      }
+
+      @media (max-width: 900px) {
+        .dash-top-cards {
+          grid-template-columns: repeat(2, minmax(0, 1fr));
+        }
+        .dash-main-row {
+          flex-direction: column;
+        }
+        .dash-bottom-row {
+          grid-template-columns: 1fr;
+        }
+      }
+
+      /* ---------- GALLERY VIEW ---------- */
+      #gallery-view {
+        margin-top: 40px;
+      }
+
+      .gallery-header {
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+        margin-bottom: 8px;
+      }
+
+      .gallery-toolbar{
+        position: sticky;
+        top: 0;
+        z-index: 20;
+        margin-top: 10px;
+        padding: 0;                 /* remove the box padding */
+        border: none;               /* remove border */
+        background: transparent;    /* no rectangle */
+        backdrop-filter: none;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 10px;
+      }
+
+      .gallery-toolbar-left{
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        align-items: center;
+      }
+
+      .gallery-toolbar-right{
+        display: flex;
+        gap: 8px;
+        align-items: center;
+        flex-shrink: 0;
+      }
+
+      .gallery-pill-btn{
+        border-radius: 999px;
+        border: none;                         /* no outline */
+        background: rgba(255,255,255,0.08);   /* soft chip */
+        color: #eaf2ff;
+        font-size: 11px;
+        padding: 7px 12px;
+        cursor: pointer;
+        font-weight: 800;
+      }
+
+      .gallery-pill-btn.active{
+        background: #62ab81;
+       color: #020509;
+      }
+
+      .gallery-pill{
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        padding: 6px 10px;
+        border-radius: 999px;
+        border: none;                         /* remove outline */
+        background: rgba(255,255,255,0.06);   /* soft chip */
+      }
+
+      .gallery-pill-label{
+        font-size: 10px;
+        opacity: 0.85;
+        letter-spacing: .06em;
+        text-transform: uppercase;
+        white-space: nowrap;
+      }
+
+      .gallery-pill-select{
+        background: transparent;              /* key: no inner box */
+        color: #f5f7ff;
+        border: none;                         /* remove outline */
+        border-radius: 999px;
+        padding: 6px 6px;
+        font-family: inherit;
+        font-size: 11px;
+        outline: none;
+        cursor: pointer;
+      }
+
+      .gallery-pill-select option{
+        background: #141414;
+        color: #f5f7ff;
+      }
+
+      .gallery-grid {
+        margin-top: 4px;
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+        gap: 12px;
+      }
+
+      .gallery-item{
+        position: relative;
+        overflow: hidden;
+        border-radius: 14px;
+        border: none; /* remove the tile outline */
+        box-shadow: 0 14px 34px rgba(0,0,0,0.55);
+        background: rgba(0,0,0,0.25);
+        cursor: pointer;
+        transform: translateZ(0);
+      }
+
+      .gallery-item:hover{
+        transform: translateY(-2px);
+        box-shadow: 0 18px 44px rgba(0,0,0,0.65);
+      }
+
+      .gallery-thumb {
+        width: 100%;
+        height: 100%;
+        display: block;
+        object-fit: cover;
+      }
+
+      .gallery-meta {
+        position: absolute;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        padding: 4px 6px;
+        font-size: 10px;
+        background: linear-gradient(
+          to top,
+          rgba(0, 0, 0, 0.75),
+          transparent
+        );
+        color: #e5ecff;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        gap: 6px;
+      }
+
+      .gallery-chip {
+        font-size: 9px;
+        padding: 2px 7px;
+        border-radius: 999px;
+        text-transform: uppercase;
+        letter-spacing: 0.06em;
+        white-space: nowrap;
+      }
+
+      .gallery-time {
+        font-size: 10px;
+        opacity: 0.9;
+        white-space: nowrap;
+      }
+
+      .chip-heavy { background: rgba(201,79,79,0.95); color: #fff; }
+      .chip-light { background: rgba(230,170,62,0.95); color: #201b09; }
+      .chip-nobloom { background: rgba(98,171,129,0.95); color: #02100a; }
+      .chip-fresh { background: rgba(64,185,160,0.95); color: #02110e; }
+      .chip-dry { background: rgba(129,99,191,0.95); color: #f9f5ff; }
+
+      /* ---------- MAP VIEW ---------- */
+      #map-view {
+        margin-top: 40px;
+      }
+
+      /* ---------- MAP FILTER PANEL ---------- */
+      .map-filter-panel{
+        position: absolute;
+        z-index: 600;
+        background: rgba(15,15,15,0.92);
+        border: 1px solid rgba(255,255,255,0.12);
+        border-radius: 12px;
+        padding: 12px 14px;
+        min-width: 180px;
+        box-shadow: 0 18px 40px rgba(0,0,0,0.75);
+        font-size: 12px;
+
+        /* ✅ we will set these dynamically from JS */
+        top: 0;
+        left: 0;
+      }
+
+      .map-filter-title{
+        font-weight: 800;
+        letter-spacing: .08em;
+        font-size: 11px;
+        margin-bottom: 10px;
+        opacity: .9;
+      }
+
+      .map-filter-row{
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin: 6px 0;
+        cursor: pointer;
+      }
+
+      .map-filter-row input{
+        accent-color: #62ab81;
+      }
+
+      
+      /* ---------- WEBCAM ICON GLOW (Leaflet divIcon) ---------- */
+      .webcam-marker{
+        width: 20px;
+        height: 20px;
+        position: relative;
+        display: grid;
+        place-items: center;
+      }
+
+      /* smaller glow */
+      .webcam-marker::before{
+        content:"";
+        position:absolute;
+        inset:-3px;                 /* was -6px (too big) */
+        border-radius:50%;
+        background: rgba(98,171,129,0.22);
+      }
+
+      /* bigger icon */
+      .webcam-marker img{
+        position: relative;
+        z-index: 1;
+        width: 18px;                /* was 14px */
+        height: 18px;               /* was 14px */
+        display:block;
+        filter: drop-shadow(0 0 1px rgba(0,0,0,0.55));
+      }
+
+      #mapContainer {
+        width: 100%;
+        height: 420px;
+        border-radius: 12px;
+        overflow: hidden;
+        border: 1px solid rgba(70, 86, 112, 0.8);
+        box-shadow: 0 16px 40px rgba(0,0,0,0.8);
+        position: relative;
+      }
+
+      .leaflet-control-zoom a {
+        background: rgba(20, 20, 20, 0.85);
+        color: #f5f5f5;
+        border: none;
+      }
+
+      /* --- Map Layers toggle button (left side) --- */
+      .leaflet-control-layers-toggle-btn{
+        width: 34px;
+        height: 34px;
+        border-radius: 8px;
+        display: grid;
+        place-items: center;
+        cursor: pointer;
+
+        background: rgba(20, 20, 20, 0.85);
+        border: 1px solid rgba(255,255,255,0.10);
+        box-shadow: 0 10px 24px rgba(0,0,0,0.55);
+      }
+
+      .leaflet-control-layers-toggle-btn:hover{
+        background: rgba(30, 30, 30, 0.95);
+      }
+
+      .leaflet-control-layers-toggle-btn svg{
+        width: 18px;
+        height: 18px;
+        opacity: 0.95;
+      }
+
+      /* Hide/show your panel */
+      .map-filter-panel.is-hidden{
+        display: none;
+      }
+
+      .leaflet-control-zoom a:hover {
+        background: rgba(30, 30, 30, 0.95);
+      }
+      .leaflet-control-attribution {
+        background: rgba(0,0,0,0.6);
+        color: #ddd;
+      }
+
+      /* ---------- WEBCAM POPUP: FULL POPUP SCROLL (livestream included) ---------- */
+      .sargi-popup .leaflet-popup-content-wrapper{
+        max-height: 340px;     /* total popup height cap */
+        overflow: auto;        /* ✅ scroll the whole popup */
+      }
+
+      /* Leaflet puts your HTML inside here */
+      .sargi-popup .leaflet-popup-content{
+        margin: 12px 12px 10px;
+        width: 300px !important; /* keep layout stable */
+      }
+
+      /* Your popup container no longer needs header/body split */
+      .webcam-popup{
+        display: block;
+      }
+
+      /* Smooth scrollbar (Chrome/Edge/Safari) */
+      .sargi-popup .leaflet-popup-content-wrapper::-webkit-scrollbar{ width: 6px; }
+      .sargi-popup .leaflet-popup-content-wrapper::-webkit-scrollbar-track{ background: transparent; }
+      .sargi-popup .leaflet-popup-content-wrapper::-webkit-scrollbar-thumb{
+        background: rgba(255,255,255,0.25);
+        border-radius: 6px;
+      }
+      .sargi-popup .leaflet-popup-content-wrapper::-webkit-scrollbar-thumb:hover{
+        background: rgba(255,255,255,0.4);
+      }
+
+      /* Firefox */
+      .sargi-popup .leaflet-popup-content-wrapper{
+        scrollbar-width: thin;
+        scrollbar-color: rgba(255,255,255,0.3) transparent;
+      }
+
+      /* ---------- Leaflet popup dark theme ---------- */
+      .sargi-popup .leaflet-popup-content-wrapper {
+        background: rgba(30, 30, 30, 0.98);
+        color: #f5f7ff;
+        border: 1px solid #3b3f48;
+        border-radius: 14px;
+        box-shadow: 0 22px 50px rgba(0,0,0,0.8);
+      }
+      .sargi-popup .leaflet-popup-tip {
+        background: rgba(30, 30, 30, 0.98);
+        border: 1px solid #3b3f48;
+      }
+      .sargi-popup .leaflet-popup-content {
+        margin: 12px 12px 10px;
+        font-family: "Montserrat", system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      }
+      .sargi-popup .leaflet-popup-close-button {
+        color: #f5f7ff !important;
+        opacity: 0.9;
+      }
+      .sargi-popup .leaflet-popup-close-button:hover {
+        color: #62ab81 !important;
+        opacity: 1;
+      }
+      .sargi-popup .popup-img {
+        width: 100%;
+        height: 120px;
+        object-fit: cover;
+        border-radius: 10px;
+        border: 1px solid rgba(255,255,255,0.10);
+        margin-bottom: 10px;
+        display: block;
+      }
+      .sargi-popup .popup-title {
+        font-weight: 800;
+        letter-spacing: .02em;
+        margin-bottom: 6px;
+      }
+      .sargi-popup .popup-row {
+        font-size: 11px;
+        opacity: 0.9;
+        margin-top: 2px;
+      }
+      .sargi-popup .popup-accent {
+        color: #62ab81;
+        font-weight: 700;
+      }
+
+      .sargi-filter-btn:hover {
+        background: rgba(30, 30, 30, 0.95);
+      }
+
+      /* ---------- WEBCAM POPUP DASHBOARD ---------- */
+      .webcam-popup-embed {
+        margin: 8px 0;
+        border-radius: 10px;
+        overflow: hidden;
+        border: 1px solid rgba(255,255,255,0.10);
+        background: rgba(0,0,0,0.35);
+      }
+
+      .webcam-popup-embed iframe {
+        width: 100%;
+        height: 140px;
+        border: 0;
+        display: block;
+      }
+
+      .webcam-popup-kv {
+        display: grid;
+        grid-template-columns: 1fr auto;
+        gap: 6px;
+        font-size: 11px;
+        opacity: 0.95;
+        margin-top: 4px;
+      }
+
+      .webcam-popup-kv .label {
+        opacity: 0.8;
+      }
+
+      .webcam-popup-kv .value {
+        color: #62ab81;
+        font-weight: 800;
+      }
+
+      .webcam-popup-mini-title {
+        font-size: 11px;
+        opacity: 0.85;
+        margin-top: 10px;
+        margin-bottom: 6px;
+        letter-spacing: .06em;
+        text-transform: uppercase;
+      }
+
+      .webcam-popup-btn {
+        margin-top: 24px;
+        width: 100%;
+        padding: 8px 10px;
+        border-radius: 10px;
+        border: none;
+        background: #62ab81;
+        color: #020509;
+        font-weight: 900;
+        cursor: pointer;
+      }
+
+      .webcam-popup-btn:hover {
+        opacity: 0.96;
+        transform: translateY(-1px);
+      }
+
+      .webcam-mini-canvas{
+        width: 100% !important;
+        height: 100% !important;   /* important: let the wrapper control height */
+        display: block;
+      }
+
+      .webcam-donut-wrap{
+        width: 120px;              /* ✅ lock width */
+        height: 120px;             /* ✅ lock height */
+        margin: 8px auto 0;
+        display: grid;
+        place-items: center;
+      }
+
+      .webcam-donut-canvas{
+        width: 100% !important;
+        height: 100% !important;   /* ✅ fill the square wrapper */
+        display: block;
+      }
+
+      /* ---------- GALLERY DETAIL MODAL ---------- */
+      .gallery-detail-modal {
+        position: fixed;
+        inset: 0;
+        background: rgba(0,0,0,0.75);
+        display: none;
+        justify-content: center;
+        align-items: center;
+        z-index: 600;
+      }
+
+      /* ---------- DETAIL IMAGE NAV ARROWS ---------- */
+      .gallery-detail-imagewrap { 
+        position: relative;   
+        background: #000;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        min-height: 0;
+      }
+
+      .detail-nav-btn{
+        position: absolute;
+        top: 50%;
+        transform: translateY(-50%);
+        width: 44px;
+        height: 44px;
+        border-radius: 999px;
+        border: 1px solid rgba(255,255,255,0.14);
+        background: rgba(0,0,0,0.35);
+        color: #fff;
+        font-size: 22px;
+        font-weight: 900;
+        display: grid;
+        place-items: center;
+        cursor: pointer;
+        z-index: 5;
+        opacity: 0.0;
+        transition: opacity 0.15s ease, transform 0.15s ease;
+        user-select: none;
+      }
+
+      .detail-nav-btn:hover{ transform: translateY(-50%) scale(1.03); }
+
+      .detail-nav-btn{
+        position: fixed;              /* ✅ ya NO es absolute dentro de la imagen */
+        top: 50%;
+        transform: translateY(-50%);
+        width: 44px;
+        height: 44px;
+        border-radius: 999px;
+        border: 1px solid rgba(255,255,255,0.14);
+        background: rgba(0,0,0,0.35);
+        color: #fff;
+        font-size: 22px;
+        font-weight: 900;
+        display: grid;
+        place-items: center;
+        cursor: pointer;
+        z-index: 9999;
+        opacity: 0.0;
+        transition: opacity 0.15s ease, transform 0.15s ease;
+        user-select: none;
+      }
+
+      /* show on hover anywhere on overlay */
+      .gallery-detail-modal:hover .detail-nav-btn{ opacity: 1; }
+
+      .detail-nav-btn:hover{ transform: translateY(-50%) scale(1.03); }
+
+      .detail-nav-btn:disabled{
+        opacity: 0.18 !important;
+        cursor: not-allowed;
+        transform: translateY(-50%);
+      }
+
+      @media (hover: none) {
+      .detail-nav-btn{ opacity: 0.85; }
+      }
+
+
+      /* Always show arrows on touch devices (no hover) */
+      @media (hover: none) {
+      .detail-nav-btn{ opacity: 0.85; }
+      }
+
+      .gallery-detail-content {
+        width: min(980px, calc(100vw - 48px));
+        height: min(720px, calc(100vh - 64px));
+        background: #1e1e1e;
+        border-radius: 16px;
+        border: 1px solid #3b3f48;
+        box-shadow: 0 30px 80px rgba(0,0,0,0.85);
+        overflow: hidden;
+        display: flex;
+        flex-direction: column;
+        position: relative;
+      }
+
+      .gallery-detail-topbar {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 12px 14px;
+        border-bottom: 1px solid rgba(255,255,255,0.08);
+        background: rgba(30,30,30,0.92);
+      }
+
+      .gallery-detail-title {
+        font-size: 12px;
+        font-weight: 700;
+        letter-spacing: .08em;
+        text-transform: uppercase;
+        opacity: .95;
+      }
+
+      .gallery-detail-close {
+        border: 1px solid rgba(255,255,255,0.14);
+        background: rgba(255,255,255,0.06);
+        color: #fff;
+        border-radius: 10px;
+        padding: 6px 10px;
+        font-weight: 600;
+        cursor: pointer;
+      }
+      .gallery-detail-close:hover { opacity: 0.92; }
+
+      .gallery-detail-body {
+        flex: 1;
+        display: grid;
+        grid-template-columns: 1.6fr 1fr;
+        gap: 0;
+        min-height: 0;
+      }
+
+      .gallery-detail-imagewrap img {
+        width: 100%;
+        height: 100%;
+        object-fit: contain;
+        background: #000;
+      }
+
+      .gallery-detail-side {
+        padding: 14px;
+        border-left: 1px solid rgba(255,255,255,0.08);
+        background: #1a1a1a;
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+        overflow: auto;
+      }
+
+      .detail-chip {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        font-size: 11px;
+        padding: 7px 10px;
+        border-radius: 999px;
+        border: 1px solid rgba(98,171,129,0.45);
+        background: rgba(98,171,129,0.12);
+        color: #d7ffe7;
+        width: fit-content;
+      }
+
+      .detail-sub {
+        font-size: 11px;
+        opacity: 0.85;
+        line-height: 1.35;
+        margin: 0;
+      }
+
+      .detail-kv {
+        display: grid;
+        grid-template-columns: 1fr auto;
+        gap: 8px;
+        padding: 10px;
+        border-radius: 12px;
+        border: 1px solid rgba(255,255,255,0.08);
+        background: rgba(0,0,0,0.25);
+        font-size: 11px;
+      }
+
+      .detail-kv span:last-child {
+        opacity: 0.95;
+        font-weight: 600;
+      }
+
+      .gallery-detail-bottombar {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 12px 14px;
+        border-top: 1px solid rgba(255,255,255,0.08);
+        background: rgba(30,30,30,0.92);
+        gap: 10px;
+      }
+
+      .loc-pill {
+        font-size: 11px;
+        opacity: 0.9;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        max-width: 62%;
+      }
+
+      .add-location-btn {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        padding: 9px 14px;
+        border-radius: 12px;
+        background: #62ab81;
+        color: #020509;
+        font-size: 12px;
+        font-weight: 800;
+        border: none;
+        cursor: pointer;
+        box-shadow: 0 12px 26px rgba(0,0,0,0.55);
+      }
+
+      .add-location-btn:hover {
+        opacity: 0.96;
+        transform: translateY(-1px);
+      }
+
+      @media (max-width: 900px) {
+        .gallery-detail-body { grid-template-columns: 1fr; }
+        .gallery-detail-side {
+          border-left: none;
+          border-top: 1px solid rgba(255,255,255,0.08);
+        }
+      }
+
+      /* ---------- LOCATION PICKER MODAL (LEAFLET) ---------- */
+      .loc-picker-modal {
+        position: fixed;
+        inset: 0;
+        background: rgba(0,0,0,0.75);
+        display: none;
+        justify-content: center;
+        align-items: center;
+        z-index: 700;
+      }
+
+      .loc-picker-content {
+        width: min(860px, calc(100vw - 48px));
+        background: #1e1e1e;
+        border-radius: 16px;
+        border: 1px solid rgba(70,86,112,0.7);
+        box-shadow: 0 26px 70px rgba(0,0,0,0.85);
+        overflow: hidden;
+      }
+
+      .loc-picker-header {
+        padding: 14px 16px 10px;
+        border-bottom: 1px solid rgba(255,255,255,0.08);
+      }
+
+      .loc-picker-header h2 {
+        margin: 0 0 4px;
+        font-size: 18px;
+        letter-spacing: .02em;
+      }
+
+      .loc-picker-header p {
+        margin: 0;
+        font-size: 11px;
+        opacity: 0.85;
+      }
+
+      #locPickerMap {
+        width: 100%;
+        height: 420px;
+      }
+
+      .loc-picker-footer {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 12px 16px;
+        border-top: 1px solid rgba(255,255,255,0.08);
+        gap: 10px;
+      }
+
+      .loc-selected {
+        font-size: 11px;
+        opacity: 0.85;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+
+      .loc-picker-actions {
+        display: flex;
+        gap: 8px;
+      }
+
+      .btn-ghost {
+        padding: 9px 14px;
+        border-radius: 12px;
+        border: 1px solid rgba(255,255,255,0.14);
+        background: rgba(255,255,255,0.05);
+        color: #fff;
+        font-size: 12px;
+        font-weight: 700;
+        cursor: pointer;
+      }
+
+      .btn-primary {
+        padding: 9px 14px;
+        border-radius: 12px;
+        border: none;
+        background: #62ab81;
+        color: #020509;
+        font-size: 12px;
+        font-weight: 800;
+        cursor: pointer;
+      }
+
+      .btn-primary:disabled {
+        opacity: 0.45;
+        cursor: not-allowed;
+      }
+    </style>
+  </head>
+
+  <body>
+    <!-- LEFT MENU -->
+    <div class="side-menu">
+      <div class="side-menu-logo">
+        <img src="logo.png" class="side-logo-img" />
+      </div>
+
+      <!-- MAIN ICONS -->
+      <div class="side-menu-items">
+        <!-- INTENSITY MODEL (ACTIVE BY DEFAULT) -->
+        <button class="side-menu-item active" type="button" data-model="bloom">
+          <img src="Icons/intensity-white.png"
+               class="side-menu-icon-img icon-idle"
+               alt="Intensity" />
+          <img src="Icons/intensity-green.png"
+               class="side-menu-icon-img icon-active"
+               alt="Intensity active" />
+        </button>
+
+        <!-- FRESHNESS MODEL -->
+        <button class="side-menu-item" type="button" data-model="fresh">
+          <img src="Icons/freshness-white.png"
+               class="side-menu-icon-img icon-idle"
+               alt="Freshness" />
+          <img src="Icons/freshness-green.png"
+               class="side-menu-icon-img icon-active"
+               alt="Freshness active" />
+        </button>
+
+        <!-- DASHBOARD BUTTON -->
+        <button class="side-menu-item" type="button" data-action="dashboard">
+          <img src="Icons/chart-white.png"
+               class="side-menu-icon-img icon-idle"
+               alt="Dashboard" />
+          <img src="Icons/chart-green.png"
+               class="side-menu-icon-img icon-active"
+               alt="Dashboard active" />
+        </button>
+
+        <!-- GALLERY BUTTON -->
+        <button class="side-menu-item" type="button" data-action="gallery">
+          <img src="Icons/image-white.png"
+               class="side-menu-icon-img icon-idle"
+               alt="Gallery" />
+          <img src="Icons/image-green.png"
+               class="side-menu-icon-img icon-active"
+               alt="Gallery active" />
+        </button>
+
+        <!-- MAP BUTTON -->
+        <button class="side-menu-item" type="button" data-action="map">
+          <img src="Icons/map-white.png"
+               class="side-menu-icon-img icon-idle"
+               alt="Map" />
+          <img src="Icons/map-green.png"
+               class="side-menu-icon-img icon-active"
+               alt="Map active" />
+        </button>
+      </div>
+
+      <!-- BOTTOM: SETTINGS -->
+      <div class="side-menu-bottom">
+        <button class="side-menu-item" type="button" data-action="settings">
+          <img src="Icons/gear-white.png"
+               class="side-menu-icon-img icon-idle"
+               alt="Settings" />
+          <img src="Icons/gear-green.png"
+               class="side-menu-icon-img icon-active"
+               alt="Settings active" />
+        </button>
+      </div>
+    </div>
+
+    <!-- MAIN APP -->
+    <div class="app-wrapper">
+      <!-- CLASSIFIER VIEW -->
+      <div id="classifier-view">
+        <div class="card">
+          <h1 id="title-text">Sargassum Classifier</h1>
+          <p class="subtitle" id="subtitle-text">
+            Upload a coastal image to estimate sargassum bloom intensity.
+          </p>
+
+          <div class="upload-wrapper">
+            <label for="imageUpload" class="file-input-label" id="upload-label">
+              Upload Image
+            </label>
+            <input type="file" id="imageUpload" accept="image/*" />
+            <p class="helper-text" id="helper-text">
+              Ideal: top-down or shoreline views where sargassum is visible.
+            </p>
+          </div>
+
+          <div class="preview-frame" id="preview-frame">
+            <img id="preview" alt="Uploaded preview" />
+          </div>
+
+          <div id="label-container"></div>
+          <div class="footer-note" id="footer-note-text">
+            Model · Teachable Machine · On-device inference
+          </div>
+        </div>
+      </div>
+
+      <!-- DASHBOARD VIEW (initially hidden) -->
+      <div id="dashboard-view" style="display:none;">
+        <div class="dash-actions">
+          <button class="download-btn" id="downloadExcelBtn" type="button">
+            Download Report
+          </button>
+        </div>
+        <div class="dash-layout">
+          <div class="dash-top-cards">
+            <div class="metric-card">
+              <div class="metric-label" id="metric-images-label">Images analyzed</div>
+              <div class="metric-value" id="metric-total">0</div>
+              <div class="metric-sub" id="metric-images-sub">
+                Across both models this session
+              </div>
+            </div>
+            <div class="metric-card">
+              <div class="metric-label" id="metric-bloom-label">Bloom model runs</div>
+              <div class="metric-value" id="metric-bloom">0</div>
+              <div class="metric-sub" id="metric-bloom-sub">
+                Heavy / Light / No bloom classifications
+              </div>
+            </div>
+            <div class="metric-card">
+              <div class="metric-label" id="metric-fresh-label">Freshness model runs</div>
+              <div class="metric-value" id="metric-fresh">0</div>
+              <div class="metric-sub" id="metric-fresh-sub">
+                Fresh vs Dry sargassum classifications
+              </div>
+            </div>
+          </div>
+
+          <div class="dash-main-row">
+            <div class="card dash-large-card">
+              <h2 class="card-title-small" id="dash-bloom-overview-title">Bloom intensity overview</h2>
+              <p class="subtitle" id="dash-bloom-overview-subtitle" style="margin-bottom:10px;">
+                Distribution of Heavy, Light, and No bloom classifications.
+              </p>
+              <canvas id="bloomBarChart"></canvas>
+            </div>
+
+            <div class="dash-side-column">
+              <div class="card">
+                <h2 class="card-title-small" id="dash-fresh-donut-title">Fresh vs Dry</h2>
+                <canvas id="freshDonut"></canvas>
+              </div>
+            </div>
+          </div>
+
+          <div class="dash-bottom-row">
+            <div class="card">
+              <h2 class="card-title-small" id="dash-trend-title">Bloom severity trend</h2>
+              <canvas id="bloomTrendChart"></canvas>
+            </div>
+
+            <div class="card">
+              <h2 class="card-title-small" id="dash-confidence-title">Model certainty index</h2>
+              <canvas id="certaintyChart"></canvas>
+            </div>
+
+            <div class="card dash-index-card">
+              <div class="index-pill" id="dash-index-pill">Sargassum Index</div>
+              <div class="index-value" id="indexValue">0.00</div>
+              <p class="index-caption" id="dash-index-caption">
+                Average bloom score (0 = no bloom, 1 = light, 2 = heavy) based
+                on all bloom classifications this session.
+              </p>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- GALLERY VIEW (initially hidden) -->
+      <div id="gallery-view" style="display:none;">
+        <div class="card">
+          <div class="gallery-header">
+            <h1 id="gallery-title">Image Gallery</h1>
+            <p class="subtitle" id="gallery-subtitle">
+              All images you’ve uploaded this session.
+            </p>
+          </div>
+
+          <div class="gallery-toolbar" id="galleryToolbar">
+        <div class="gallery-toolbar-left">
+          <button class="gallery-pill-btn active" id="galleryResetBtn">All</button>
+
+          <div class="gallery-pill">
+            <span class="gallery-pill-label" id="lblSeverity">Severity</span>
+            <select class="gallery-pill-select" id="filterSeverity">
+              <option value="any" id="optSeverityAny">Any</option>
+              <option value="heavy" id="optSeverityHeavy">Heavy</option>
+              <option value="light" id="optSeverityLight">Light</option>
+              <option value="nobloom" id="optSeverityNo">No Bloom</option>
+            </select>
+          </div>
+
+          <div class="gallery-pill">
+            <span class="gallery-pill-label" id="lblCondition">Condition</span>
+          <select class="gallery-pill-select" id="filterCondition">
+            <option value="any" id="optCondAny">Any</option>
+            <option value="fresh" id="optCondFresh">Fresh</option>
+            <option value="dry" id="optCondDry">Dry</option>
+          </select>
+        </div>
+
+        <div class="gallery-pill">
+          <span class="gallery-pill-label" id="lblRegion">Region</span>
+          <select class="gallery-pill-select" id="filterRegion">
+            <option value="any" id="optRegionAny">Any</option>
+            <!-- countries will populate automatically -->
+          </select>
+        </div>
+
+        <div class="gallery-pill">
+            <span class="gallery-pill-label" id="lblDate">Date</span>
+            <select class="gallery-pill-select" id="filterDate">
+              <option value="all" id="optDateAll">All time</option>
+              <option value="24h" id="optDate24">Last 24h</option>
+              <option value="7d" id="optDate7">Last 7d</option>
+              <option value="30d" id="optDate30">Last 30d</option>
+            </select>
+          </div>
+        </div>
+
+            <div class="gallery-toolbar-right">
+              <span class="gallery-pill-label" id="lblSort">Sort</span>
+              <select class="gallery-pill-select" id="sortGallery">
+                <option value="recent" id="optSortRecent">Most recent</option>
+                <option value="oldest" id="optSortOldest">Oldest</option>
+              </select>
+            </div>
+          </div>
+          <div class="gallery-grid" id="galleryGrid"></div>
+        </div>
+      </div>
+
+      <!-- MAP VIEW (initially hidden) -->
+      <div id="map-view" style="display:none;">
+        <div class="card">
+          <h1 id="map-title">SARGASSUM MAP</h1>
+          <p class="subtitle" id="map-subtitle">
+            Visualize sargassum activity across the wider Caribbean region.
+          </p>
+          <div id="mapContainer">
+            <!-- MAP FILTER PANEL -->
+            <div class="map-filter-panel is-hidden">
+              <div class="map-filter-title" id="mapLayersTitle">MAP LAYERS</div>
+
+              <label class="map-filter-row">
+                <span id="mapLayerWebcamsLabel">Webcams</span>
+                <input type="checkbox" id="toggleWebcams" checked>
+              </label>
+
+                <label class="map-filter-row">
+                  <span id="mapLayerObservationsLabel">Observations</span>
+                  <input type="checkbox" id="toggleObservations" checked>
+                </label>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+    <!-- SETTINGS MODAL -->
+    <div id="settingsModal" class="settings-modal">
+      <div class="settings-content">
+        <h2 id="settings-title">Settings</h2>
+
+        <label>
+          <div class="setting-row">
+            <span id="language-label">Language</span>
+            <select id="languageSelect">
+              <option value="en">English</option>
+              <option value="es">Español</option>
+              <option value="fr">Français</option>
+              <option value="nl">Nederlands</option>
+            </select>
+          </div>
+        </label>
+
+        <button id="closeSettings" class="close-settings-btn">Close</button>
+      </div>
+    </div>
+
+    <!-- GALLERY DETAIL MODAL -->
+    <div id="galleryDetailModal" class="gallery-detail-modal">
+      <div class="gallery-detail-content">
+        <div class="gallery-detail-topbar">
+          <div class="gallery-detail-title" id="detailTitle">IMAGE DETAILS</div>
+          <button class="gallery-detail-close" id="detailCloseBtn">Close</button>
+        </div>
+
+        <div class="gallery-detail-body">
+
+      <div class="gallery-detail-imagewrap">
+        <button class="detail-nav-btn detail-nav-left" id="detailPrevBtn" aria-label="Previous image">‹</button>
+
+        <img id="detailImage" alt="Selected image" />
+
+        <button class="detail-nav-btn detail-nav-right" id="detailNextBtn" aria-label="Next image">›</button>
+      </div>
+      
+
+          <div class="gallery-detail-side">
+            <div class="detail-chip" id="detailChip">PENDING</div>
+
+            <p class="detail-sub" id="detailSub">
+              Review the result, then optionally attach a location to map this observation.
+            </p>
+
+            <div class="detail-kv">
+              <span id="detailTimeLabel">Time</span><span id="detailTime">—</span>
+            </div>
+
+            <div class="detail-kv">
+              <span id="detailCountryLabel">Country</span><span id="detailCountry">—</span>
+            </div>
+
+            <div class="detail-kv">
+              <span id="detailModelLabel">Model</span><span id="detailModel">—</span>
+            </div>
+            <div class="detail-kv">
+              <span id="detailConfidenceLabel">Confidence</span><span id="detailConfidence">—</span>
+            </div>
+              <div id="detailProbBreakdown" class="detail-bars"></div>
+          </div>
+        </div>
+
+        <div class="gallery-detail-bottombar">
+          <div class="loc-pill" id="detailLocationLabel">Location: None</div>
+          <button class="add-location-btn" id="openLocationPickerBtn">Add location</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- LOCATION PICKER MODAL -->
+    <div id="locPickerModal" class="loc-picker-modal">
+      <div class="loc-picker-content">
+        <div class="loc-picker-header">
+          <h2 id="locPickerTitle">Add location</h2>
+          <p id="locPickerSubtitle">Click on the map to drop a circle where this photo was taken.</p>
+        </div>
+
+        <div id="locPickerMap"></div>
+
+        <div class="loc-picker-footer">
+          <div class="loc-selected" id="locSelectedText">Selected: None</div>
+          <div class="loc-picker-actions">
+            <button class="btn-ghost" id="locCancelBtn">Cancel</button>
+            <button class="btn-primary" id="locSaveBtn" disabled>Save</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <script>
+      let model, labelContainer, maxPredictions;
+      let modelLoaded = false;
+
+      let currentModelKey = "bloom";
+      let currentLanguage = "en";
+
+      const modelFolders = {
+        bloom: "./",
+        fresh: "./Fresh model/"
+      };
+
+      let predictionHistory = [];
+
+      // gallery images
+      // { src, time, model?, classIndex?, confidence?, lat?, lng?, country? }
+      let galleryImages = [];
+      let lastGalleryIndex = null;
+      let galleryFilters = {
+        severity: "any",   // any | heavy | light | nobloom
+        condition: "any",  // any | fresh | dry
+        region: "any",     // any | country name
+        date: "all",       // all | 24h | 7d | 30d
+        sort: "recent"     // recent | oldest
+      };
+
+      function positionDetailNavButtons() {
+        const modal = document.getElementById("galleryDetailModal");
+        const content = document.querySelector(".gallery-detail-content");
+        const body = document.querySelector(".gallery-detail-body");
+        const prevBtn = document.getElementById("detailPrevBtn");
+        const nextBtn = document.getElementById("detailNextBtn");
+        if (!modal || !content || !body || !prevBtn || !nextBtn) return;
+        if (modal.style.display !== "flex") return;
+
+        const bodyRect = body.getBoundingClientRect();
+        const contentRect = content.getBoundingClientRect();
+
+        const gap = 24;                 
+        const btnW = prevBtn.offsetWidth || 44;
+
+        const centerY = bodyRect.top + bodyRect.height / 2;
+        prevBtn.style.top = `${centerY}px`;
+        nextBtn.style.top = `${centerY}px`;
+
+        prevBtn.style.left = `${Math.max(12, contentRect.left - gap - btnW)}px`;
+        nextBtn.style.left = `${Math.min(window.innerWidth - btnW - 12, contentRect.right + gap)}px`;
+      }
+
+      // charts
+      let bloomBarChart = null;
+      let freshDonutChart = null;
+      let bloomTrendChart = null;
+      let certaintyChart = null;
+
+      /* ---------------- EXPORT (EXCEL) ---------------- */
+      function toIsoLocal(ts){
+        if (!ts) return "";
+        const d = new Date(ts);
+        // “YYYY-MM-DD HH:MM:SS”
+        const pad = (n) => String(n).padStart(2,"0");
+        return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
+      }
+
+      function getClassLabel(modelName, classIndex){
+        // Adjust order ONLY if your Teachable Machine class order is different
+        const MAP = {
+          bloom: ["No Bloom", "Light Bloom", "Heavy Bloom"],
+          fresh: ["Fresh", "Dry"] // adjust if needed
+        };
+        const arr = MAP[modelName] || [];
+        return (typeof classIndex === "number" && arr[classIndex] !== undefined) ? arr[classIndex] : "";
+      }
+
+      function buildPredictionsRows(){
+        // predictionHistory: { model, classIndex, confidence, probs, time }
+        const rows = [];
+        for (const p of (predictionHistory || [])) {
+          const probs = Array.isArray(p.probs) ? p.probs : [];
+          const modelName = p.model || "";
+          const classIndex = (typeof p.classIndex === "number") ? p.classIndex : "";
+
+          rows.push({
+            time: toIsoLocal(p.time),
+            model: modelName,
+            classIndex: classIndex,
+            label: getClassLabel(modelName, p.classIndex), // ✅ NEW
+            confidencePct: (typeof p.confidence === "number") ? (p.confidence * 100).toFixed(1) : "",
+            prob0Pct: (typeof probs[0] === "number") ? (probs[0] * 100).toFixed(1) : "",
+            prob1Pct: (typeof probs[1] === "number") ? (probs[1] * 100).toFixed(1) : "",
+            prob2Pct: (typeof probs[2] === "number") ? (probs[2] * 100).toFixed(1) : ""
+          });
+        }
+        return rows;
+      }
+
+      function buildGalleryRows(){
+      // galleryImages: { src, time, model?, classIndex?, confidence?, lat?, lng?, country? ... }
+      const rows = [];
+      for (const g of (galleryImages || [])) {
+        const modelName = g.model || "";
+        rows.push({
+          time: toIsoLocal(g.time),
+          model: modelName,
+          classIndex: (typeof g.classIndex === "number") ? g.classIndex : "",
+          label: getClassLabel(modelName, g.classIndex), // ✅ NEW
+          confidencePct: (typeof g.confidence === "number") ? (g.confidence * 100).toFixed(1) : "",
+          country: g.country || "",
+          lat: (typeof g.lat === "number") ? g.lat.toFixed(6) : "",
+          lng: (typeof g.lng === "number") ? g.lng.toFixed(6) : "",
+          imageDataUrl: g.src ? "[embedded data url]" : ""
+        });
+      }
+      return rows;
+    }
+
+      function downloadSessionExcel(){
+        if (typeof XLSX === "undefined") {
+          alert("Excel export library (XLSX) not loaded.");
+          return;
+        }
+
+        const preds = buildPredictionsRows();
+        const gal = buildGalleryRows();
+        const summary = buildDailyBloomSummary(preds);
+
+        const wb = XLSX.utils.book_new();
+
+        const wsPred = XLSX.utils.json_to_sheet(preds);
+        const wsGal  = XLSX.utils.json_to_sheet(gal);
+        const wsSum  = XLSX.utils.json_to_sheet(summary);
+
+        // Append sheets
+        XLSX.utils.book_append_sheet(wb, wsPred, "Predictions");
+        XLSX.utils.book_append_sheet(wb, wsGal,  "Gallery");
+        XLSX.utils.book_append_sheet(wb, wsSum,  "Summary");
+
+        // --- Inject Sparkline formulas into Summary sheet ---
+        // Summary columns expected: A=date, B=noBloom, C=lightBloom, D=heavyBloom, E=trend
+        // For each row i starting at 2: E{i} = SPARKLINE(B{i}:D{i}, {"charttype","column"})
+        const range = XLSX.utils.decode_range(wsSum["!ref"] || "A1:E1");
+        for (let r = 2; r <= range.e.r + 1; r++) {
+          const cellAddr = `E${r}`;
+          wsSum[cellAddr] = {
+            t: "s",
+            f: `SPARKLINE(B${r}:D${r},{"charttype","column"})`
+          };
+        }
+
+        // Make Summary columns a bit nicer (optional widths)
+        wsSum["!cols"] = [
+          { wch: 12 }, // date
+          { wch: 10 }, // noBloom
+          { wch: 11 }, // lightBloom
+          { wch: 11 }, // heavyBloom
+          { wch: 16 }  // trend
+        ];
+
+        const stamp = new Date();
+        const pad = (n) => String(n).padStart(2,"0");
+        const filename = `sargassum-session-${stamp.getFullYear()}${pad(stamp.getMonth()+1)}${pad(stamp.getDate())}-${pad(stamp.getHours())}${pad(stamp.getMinutes())}.xlsx`;
+
+        XLSX.writeFile(wb, filename);
+      }
+
+      function yyyyMmDdFromIsoLocal(isoLocal){
+        // isoLocal looks like "YYYY-MM-DD HH:MM:SS"
+        return (isoLocal && isoLocal.length >= 10) ? isoLocal.slice(0,10) : "";
+      }
+
+      function buildDailyBloomSummary(predRows){
+        // predRows come from buildPredictionsRows() (already includes time, model, label)
+        // We'll summarize only bloom model for the No/Light/Heavy chart
+        const map = {}; // date -> { no, light, heavy }
+        for (const r of predRows){
+          if (r.model !== "bloom") continue;
+          const date = yyyyMmDdFromIsoLocal(r.time);
+          if (!date) continue;
+          if (!map[date]) map[date] = { no: 0, light: 0, heavy: 0 };
+          if (r.label === "No Bloom") map[date].no++;
+          else if (r.label === "Light Bloom") map[date].light++;
+          else if (r.label === "Heavy Bloom") map[date].heavy++;
+        }
+
+        const dates = Object.keys(map).sort();
+        return dates.map(d => ({
+          date: d,
+          noBloom: map[d].no,
+          lightBloom: map[d].light,
+          heavyBloom: map[d].heavy,
+          // sparkline formulas will be injected after sheet exists
+          trend: "" 
+        }));
+      }
+
+      /* ---------------- END EXPORT ---------------- */
+
+      // map instances
+      let leafletMap = null;
+      let markerLayer = null;
+      let webcamLayer = null;
+
+      // ---------- WEBCAM DASHBOARD STATE ----------
+      let webcamsData = [];                 // list of webcams
+      let webcamHistory = {};               // { camId: [{time, bloomLabel, bloomScore, freshLabel, conf}] }
+      let webcamCharts = {};                // { camId: ChartInstance }
+      let webcamDonuts = {};               // { camId: ChartInstance }
+
+      function ensureWebcamSeed(camId) {
+        if (!webcamHistory[camId]) webcamHistory[camId] = [];
+        // seed with some empty points so the chart isn't blank
+        if (webcamHistory[camId].length === 0) {
+          const now = Date.now();
+          for (let i = 6; i >= 1; i--) {
+            webcamHistory[camId].push({
+              time: now - i * 60 * 1000,
+              bloomScore: null
+            });
+          }
+        }
+      }
+
+      function pushWebcamPoint(camId, bloomScore, freshLabel) {
+        ensureWebcamSeed(camId);
+        webcamHistory[camId].push({
+          time: Date.now(),
+          bloomScore,
+          freshLabel: freshLabel || null  // "Fresh" | "Dry" | null
+        });
+        if (webcamHistory[camId].length > 60) webcamHistory[camId] = webcamHistory[camId].slice(-60);
+      }
+
+      function getWebcamLatest(camId) {
+        const arr = webcamHistory[camId] || [];
+        // find last point with a real score
+        for (let i = arr.length - 1; i >= 0; i--) {
+          if (typeof arr[i].bloomScore === "number") return arr[i];
+        }
+        return null;
+      }
+
+      /**
+      * ⚠️ This is a placeholder. When you have a snapshotUrl that supports CORS,
+      * we can run Teachable Machine here. For now it just generates a demo point
+      * so your popup dashboard works visually.
+      */
+      function runWebcamInference(camId) {
+        // Demo bloom severity score: 0..2
+        const demoBloom = Math.floor(Math.random() * 3);
+
+        // Demo fresh/dry (until you wire the real freshness model)
+        const t = getTranslation(currentLanguage);
+        const freshLabel = (Math.random() < 0.5)
+          ? ((t.classesFresh && t.classesFresh[0]) || "Fresh")
+          : ((t.classesFresh && t.classesFresh[1]) || "Dry");
+
+        pushWebcamPoint(camId, demoBloom, freshLabel);
+
+        // Update popup labels if open
+        const lastEl  = document.getElementById(`camLast-${camId}`);
+        const bloomEl = document.getElementById(`camBloom-${camId}`);
+        const freshEl = document.getElementById(`camFresh-${camId}`);
+
+        const nowStr = new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+        if (lastEl) lastEl.textContent = nowStr;
+
+        const bloomLabel =
+          demoBloom === 2 ? (t.trendLabelHeavy || "Heavy") :
+          demoBloom === 1 ? (t.trendLabelLight || "Light") :
+          (t.trendLabelNone || "No bloom");
+
+        if (bloomEl) bloomEl.textContent = bloomLabel;
+        if (freshEl) freshEl.textContent = freshLabel;
+
+        // update charts
+        renderWebcamPopupChart(camId);
+        renderWebcamPopupDonut(camId);
+      }
+
+      function getWebcamFreshDryPct(camId) {
+        const arr = webcamHistory[camId] || [];
+        let fresh = 0, dry = 0;
+
+        for (let i = arr.length - 1; i >= 0; i--) {
+          const v = arr[i].freshLabel;
+          if (!v) continue;
+
+          // normalize
+          const s = String(v).toLowerCase();
+          if (s.includes("fresh") || s.includes("fresco") || s.includes("frais") || s.includes("vers")) fresh++;
+          else if (s.includes("dry") || s.includes("seco") || s.includes("sec") || s.includes("droog")) dry++;
+        }
+
+        const total = fresh + dry;
+        if (!total) return { freshPct: 0, dryPct: 0 };
+
+        return {
+          freshPct: (fresh / total) * 100,
+          dryPct: (dry / total) * 100
+        };
+      }
+
+      function renderWebcamPopupDonut(camId) {
+        const canvas = document.getElementById(`camDonut-${camId}`);
+        if (!canvas) return;
+
+        const t = getTranslation(currentLanguage);
+        const labels = (t.classesFresh && t.classesFresh.length >= 2)
+          ? t.classesFresh
+          : ["Fresh", "Dry"];
+
+        const { freshPct, dryPct } = getWebcamFreshDryPct(camId);
+
+        const data = {
+          labels,
+          datasets: [{
+            data: [freshPct, dryPct],
+            backgroundColor: ["#62ab81", "#454545"],
+            borderColor: "#141414",
+            borderWidth: 1
+          }]
+        };
+
+        const options = {
+          responsive: true,
+          maintainAspectRatio: false,
+          cutout: "68%",
+          plugins: {
+            legend: { display: false },
+            tooltip: {
+              callbacks: {
+                label: (ctx) => `${ctx.label}: ${Number(ctx.raw).toFixed(1)}%`
+              }
+            }
+          }
+        };
+
+        if (webcamDonuts[camId]) {
+          try { webcamDonuts[camId].destroy(); } catch(e){}
+          webcamDonuts[camId] = null;
+        }
+
+        webcamDonuts[camId] = new Chart(canvas, {
+          type: "doughnut",
+          data,
+          options
+        });
+      }
+
+      function renderWebcamPopupChart(camId) {
+        const canvas = document.getElementById(`camTrend-${camId}`);
+        if (!canvas) return;
+
+        const t = getTranslation(currentLanguage);
+        const arr = webcamHistory[camId] || [];
+
+        // ✅ Only keep real inference points (numeric scores)
+        const real = arr.filter(p => typeof p?.bloomScore === "number");
+
+        // How many points to show
+        const N = 12;
+
+        // Take the most recent real points (chronological order preserved)
+        const recentReal = real.slice(-N);
+
+        // ✅ Pad to the RIGHT with nulls so the first real point starts on the LEFT
+        const padCount = Math.max(0, N - recentReal.length);
+        const padded = recentReal.concat(Array.from({ length: padCount }, () => ({ time: null, bloomScore: null })));
+
+        const labels = padded.map(p =>
+          p.time
+            ? new Date(p.time).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
+            : ""
+        );
+
+        const dataPoints = padded.map(p =>
+          (typeof p.bloomScore === "number") ? p.bloomScore : null
+        );
+
+        const data = {
+          labels,
+          datasets: [{
+            label: t.chartSeverityLabel || "Bloom severity",
+            data: dataPoints,
+            tension: 0.35,
+            spanGaps: true,
+            fill: true,
+            borderWidth: 2,
+            borderColor: "#62ab81",
+            backgroundColor: "rgba(98,171,129,0.18)",
+            pointRadius: 2.5,
+            pointHoverRadius: 4
+          }]
+        };
+
+        const options = {
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: { legend: { display: false } },
+          scales: {
+            x: {
+              type: "category",
+              ticks: {
+                autoSkip: true,
+                maxRotation: 0,
+                minRotation: 0,
+                color: "#e5e9ff",
+                font: { size: 10 }
+              },
+              grid: { color: "rgba(255,255,255,0.05)" }
+            },
+            y: {
+              min: 0,
+              max: 2,
+              ticks: {
+                stepSize: 1,
+                color: "#e5e9ff",
+                font: { size: 10 },
+                callback: function (value) {
+                  if (value === 0) return t.trendLabelNone || "No bloom";
+                  if (value === 1) return t.trendLabelLight || "Light";
+                  if (value === 2) return t.trendLabelHeavy || "Heavy";
+                  return value;
+                }
+              },
+              grid: { color: "rgba(255,255,255,0.08)" }
+            }
+          }
+        };
+
+        // Destroy + recreate (popup canvases get removed/rebuilt often)
+        if (webcamCharts[camId]) {
+          try { webcamCharts[camId].destroy(); } catch (e) {}
+          webcamCharts[camId] = null;
+        }
+
+        webcamCharts[camId] = new Chart(canvas, {
+          type: "line",
+          data,
+          options
+        });
+      }
+
+      // gallery detail state
+      let currentDetailIndex = null;
+
+      // location picker state
+      let locPickerMap = null;
+      let locPickerCircle = null;
+      let locSelected = null; // {lat, lng}
+
+      const LOC_PICK_ZOOM = 7;      // zoom level like your screenshot
+      const LOC_DEFAULT_CENTER = [20, -70];
+      const LOC_DEFAULT_ZOOM = 4;
+      const MARKER_CLICK_ZOOM = 13;  // same zoom when clicking map markers
+
+
+      function resetClassifierUI() {
+        const preview = document.getElementById("preview");
+        const previewFrame = document.getElementById("preview-frame");
+        if (preview) preview.src = "";
+        if (previewFrame) previewFrame.style.display = "none";
+
+        const fileInput = document.getElementById("imageUpload");
+        if (fileInput) fileInput.value = "";
+
+        const rows = document.querySelectorAll("#label-container .prediction-row");
+        rows.forEach((row) => {
+          const percent = row.querySelector(".percent");
+          const fill = row.querySelector(".prediction-bar-fill");
+          if (percent) percent.textContent = "0.0%";
+          if (fill) fill.style.width = "0%";
+        });
+      }
+
+      /* --------- TRANSLATIONS --------- */
+      const translations = {
+        en: {
+          titleBloom: "Sargassum Intensity",
+          subtitleBloom: "Upload a coastal image to estimate sargassum bloom intensity.",
+          titleFresh: "Sargassum Freshness",
+          subtitleFresh: "Upload a coastal image to classify fresh vs dry sargassum.",
+          uploadLabel: "Upload Image",
+          helperText: "Ideal: top-down or shoreline views where sargassum is visible.",
+          footerNote: "Model · Teachable Machine · On-device inference",
+          settingsTitle: "Settings",
+          language: "Language",
+          close: "Close",
+          classesBloom: ["Heavy Bloom", "Light Bloom", "No Bloom"],
+          classesFresh: ["Fresh", "Dry"],
+
+          metricImagesLabel: "Images analyzed",
+          metricImagesSub: "Across both models this session",
+          metricBloomLabel: "Bloom model runs",
+          metricBloomSub: "Heavy / Light / No bloom classifications",
+          metricFreshLabel: "Freshness model runs",
+          metricFreshSub: "Fresh vs Dry sargassum classifications",
+          dashBloomOverviewTitle: "Bloom intensity overview",
+          dashBloomOverviewSubtitle: "Distribution of Heavy, Light, and No bloom classifications.",
+          dashFreshDonutTitle: "Fresh vs Dry",
+          dashTrendTitle: "Bloom severity trend",
+          dashConfidenceTitle: "Bloom confidence breakdown",
+          dashIndexPill: "Sargassum Index",
+          dashIndexCaption: "Average bloom score (0 = no bloom, 1 = light, 2 = heavy) based on all bloom classifications this session.",
+
+          galleryTitle: "Image Gallery",
+          gallerySubtitle: "All images you’ve uploaded this session.",
+          galleryFilterAll: "All",
+          galleryFilterHeavy: "Heavy",
+          galleryFilterLight: "Light",
+          galleryFilterNoBloom: "No bloom",
+          galleryFilterFresh: "Fresh",
+          galleryFilterDry: "Dry",
+          galleryEmptyNone: "No images yet — upload one in the classifier to start your gallery.",
+          galleryEmptyFilter: "No images match this filter.",
+          pendingLabel: "PENDING",
+          imageDetailsTitle: "IMAGE DETAILS",
+          detailSub: "Review the result, then optionally attach a location to map this observation.",
+          time: "Time",
+          country: "Country",
+          modelWord: "Model",
+          confidenceWord: "Confidence",
+          locationPrefix: "Location",
+          locationNone: "None",
+          addLocation: "Add location",
+          editLocation: "Edit location",
+
+          locPickerTitle: "Add location",
+          locPickerSubtitle: "Click on the map to drop a circle where this photo was taken.",
+          selectedPrefix: "Selected",
+          cancel: "Cancel",
+          save: "Save",
+
+          bloomChartLabels: ["Heavy bloom", "Light bloom", "No bloom"],
+          freshChartLabels: ["Fresh", "Dry"],
+          trendLabelNone: "No bloom",
+          trendLabelLight: "Light",
+          trendLabelHeavy: "Heavy",
+          confLabelsBloom: ["Heavy", "Light", "No bloom"],
+          confLabelsFresh: ["Fresh", "Dry"],
+          chartImagesLabel: "Images",
+          chartSeverityLabel: "Bloom severity",
+          chartAvgConfidenceLabel: "Avg confidence (%)",
+
+          mapTitle: "SARGASSUM MAP",
+          mapSubtitle: "Visualize sargassum activity across the wider Caribbean region.",
+
+          mapFilterTitle: "Filter",
+          mapFilterForecasts: "Forecasts",
+
+          popupForecast: "FORECAST",
+          popupSeverity: "Severity",
+          popupDate: "Date",
+          popupLat: "Lat",
+          popupLng: "Lng",
+          webcamStatus: "Status",
+          webcamLastInference: "Last inference",
+          webcamBloom: "Bloom",
+          webcamFreshDry: "Fresh/Dry",
+          webcamTrend: "Trend",
+          webcamRun: "Run analysis",
+          webcamLive: "Live view",
+
+          galleryLblSeverity: "Severity",
+          galleryLblCondition: "Condition",
+          galleryLblRegion: "Region",
+          galleryLblDate: "Date",
+          galleryLblSort: "Sort",
+
+          optAny: "Any",
+          optAllTime: "All time",
+          optLast24h: "Last 24h",
+          optLast7d: "Last 7d",
+          optLast30d: "Last 30d",
+          optMostRecent: "Most recent",
+          optOldest: "Oldest",
+
+          mapLayersTitle: "MAP LAYERS",
+          mapLayersBtnTitle: "Map layers",
+          mapLayerWebcams: "Webcams",
+          mapLayerObservations: "Observations",
+
+          webcamFreshVsDryTitle: "Fresh vs Dry",
+          latShort: "Lat",
+          lngShort: "Lng",
+
+          ariaPrevImage: "Previous image",
+          ariaNextImage: "Next image",
+
+          certHigh: "High (≥80%)",
+          certMedium: "Medium (50–80%)",
+          certLow: "Low (<50%)",
+          certaintyBarLabel: "Certainty",
+
+          mapLayersTitle: "Map layers",
+          mapLayerWebcams: "Webcams",
+          mapLayerObservations: "Observations",
+          mapLayersBtnTitle: "Map layers",
+
+          certHigh: "High (≥80%)",
+          certMed: "Medium (50–80%)",
+          certLow: "Low (<50%)",
+
+          toolbarAll: "All",
+          severityLabel: "Severity",
+          conditionLabel: "Condition",
+          regionLabel: "Region",
+          dateLabel: "Date",
+          sortLabel: "Sort",
+          anyOption: "Any",
+          noBloomOption: "No Bloom",
+          allTime: "All time",
+          last24h: "Last 24h",
+          last7d: "Last 7d",
+          last30d: "Last 30d",
+          sortRecent: "Most recent",
+          sortOldest: "Oldest",
+
+          navIntensity: "Intensity",
+          navFreshness: "Freshness",
+          navDashboard: "Dashboard",
+          navGallery: "Gallery",
+          navMap: "Map",
+          navSettings: "Settings",
+        },
+
+        es: {
+          titleBloom: "Intensidad de Sargazo",
+          subtitleBloom: "Sube una imagen costera para estimar la intensidad del sargazo.",
+          titleFresh: "Frescura del Sargazo",
+          subtitleFresh: "Sube una imagen costera para clasificar sargazo fresco vs seco.",
+          uploadLabel: "Subir imagen",
+          helperText: "Ideal: vistas desde arriba o de la orilla donde el sargazo sea visible.",
+          footerNote: "Modelo · Teachable Machine · Inferencia en el dispositivo",
+          settingsTitle: "Ajustes",
+          language: "Idioma",
+          close: "Cerrar",
+          classesBloom: ["Floración fuerte", "Floración ligera", "Sin floración"],
+          classesFresh: ["Fresco", "Seco"],
+
+          metricImagesLabel: "Imágenes analizadas",
+          metricImagesSub: "En ambos modelos en esta sesión",
+          metricBloomLabel: "Ejecuciones (floración)",
+          metricBloomSub: "Fuerte / Ligera / Sin floración",
+          metricFreshLabel: "Ejecuciones (frescura)",
+          metricFreshSub: "Fresco vs Seco",
+          dashBloomOverviewTitle: "Resumen de intensidad",
+          dashBloomOverviewSubtitle: "Distribución de fuerte, ligera y sin floración.",
+          dashFreshDonutTitle: "Fresco vs Seco",
+          dashTrendTitle: "Tendencia de severidad",
+          dashConfidenceTitle: "Desglose de confianza",
+          dashIndexPill: "Índice de Sargazo",
+          dashIndexCaption: "Promedio del puntaje de floración (0 = sin, 1 = ligera, 2 = fuerte) en esta sesión.",
+
+          galleryTitle: "Galería de imágenes",
+          gallerySubtitle: "Todas las imágenes que subiste en esta sesión.",
+          galleryFilterAll: "Todas",
+          galleryFilterHeavy: "Fuerte",
+          galleryFilterLight: "Ligera",
+          galleryFilterNoBloom: "Sin floración",
+          galleryFilterFresh: "Fresco",
+          galleryFilterDry: "Seco",
+          galleryEmptyNone: "Aún no hay imágenes — sube una en el clasificador para empezar la galería.",
+          galleryEmptyFilter: "Ninguna imagen coincide con este filtro.",
+          pendingLabel: "PENDIENTE",
+          imageDetailsTitle: "DETALLES DE LA IMAGEN",
+          detailSub: "Revisa el resultado y opcionalmente agrega una ubicación para mapear esta observación.",
+          time: "Hora",
+          country: "País",
+          modelWord: "Modelo",
+          confidenceWord: "Confianza",
+          locationPrefix: "Ubicación",
+          locationNone: "Ninguna",
+          addLocation: "Agregar ubicación",
+          editLocation: "Editar ubicación",
+
+          locPickerTitle: "Agregar ubicación",
+          locPickerSubtitle: "Haz clic en el mapa para colocar un círculo donde se tomó esta foto.",
+          selectedPrefix: "Seleccionado",
+          cancel: "Cancelar",
+          save: "Guardar",
+
+          bloomChartLabels: ["Fuerte", "Ligera", "Sin floración"],
+          freshChartLabels: ["Fresco", "Seco"],
+          trendLabelNone: "Sin",
+          trendLabelLight: "Ligera",
+          trendLabelHeavy: "Fuerte",
+          confLabelsBloom: ["Fuerte", "Ligera", "Sin"],
+          confLabelsFresh: ["Fresco", "Seco"],
+          chartImagesLabel: "Imágenes",
+          chartSeverityLabel: "Severidad",
+          chartAvgConfidenceLabel: "Confianza prom. (%)",
+
+          mapTitle: "MAPA DE SARGAZO",
+          mapSubtitle: "Visualiza la actividad de sargazo en el Gran Caribe.",
+
+          mapFilterTitle: "Filtro",
+          mapFilterForecasts: "Pronósticos",
+
+          popupForecast: "PRONÓSTICO",
+          popupSeverity: "Severidad",
+          popupDate: "Fecha",
+          popupLat: "Lat",
+          popupLng: "Lng",
+
+          galleryLblSeverity: "Severidad",
+          galleryLblCondition: "Condición",
+          galleryLblRegion: "Región",
+          galleryLblDate: "Fecha",
+          galleryLblSort: "Ordenar",
+
+          optAny: "Cualquiera",
+          optAllTime: "Todo el tiempo",
+          optLast24h: "Últimas 24 h",
+          optLast7d: "Últimos 7 días",
+          optLast30d: "Últimos 30 días",
+          optMostRecent: "Más reciente",
+          optOldest: "Más antiguo",
+
+          mapLayersTitle: "CAPAS DEL MAPA",
+          mapLayersBtnTitle: "Capas del mapa",
+          mapLayerWebcams: "Cámaras",
+          mapLayerObservations: "Observaciones",
+
+          webcamStatus: "Estado",
+          webcamLastInference: "Último análisis",
+          webcamBloom: "Floración",
+          webcamFreshDry: "Fresco/Seco",
+          webcamTrend: "Tendencia",
+          webcamRun: "Ejecutar análisis",
+          webcamLive: "Vista en vivo",
+          webcamFreshVsDryTitle: "Fresco vs Seco",
+
+          latShort: "Lat",
+          lngShort: "Lng",
+
+          ariaPrevImage: "Imagen anterior",
+          ariaNextImage: "Imagen siguiente",
+
+          certHigh: "Alta (≥80%)",
+          certMedium: "Media (50–80%)",
+          certLow: "Baja (<50%)",
+          certaintyBarLabel: "Certeza",
+
+          mapLayersTitle: "Capas del mapa",
+          mapLayerWebcams: "Webcams",
+          mapLayerObservations: "Observaciones",
+          mapLayersBtnTitle: "Capas del mapa",
+
+          webcamStatus: "Estado",
+          webcamLastInference: "Último análisis",
+          webcamBloom: "Floración",
+          webcamFreshDry: "Fresco/Seco",
+          webcamTrend: "Tendencia",
+          webcamRun: "Ejecutar análisis",
+          webcamLive: "Vista en vivo",
+          webcamFreshVsDryTitle: "Fresco vs Seco",
+
+          certHigh: "Alta (≥80%)",
+          certMed: "Media (50–80%)",
+          certLow: "Baja (<50%)",
+
+          toolbarAll: "Todas",
+          severityLabel: "Severidad",
+          conditionLabel: "Condición",
+          regionLabel: "Región",
+          dateLabel: "Fecha",
+          sortLabel: "Ordenar",
+          anyOption: "Cualquiera",
+          noBloomOption: "Sin floración",
+          allTime: "Todo el tiempo",
+          last24h: "Últimas 24 h",
+          last7d: "Últimos 7 días",
+          last30d: "Últimos 30 días",
+          sortRecent: "Más reciente",
+          sortOldest: "Más antiguo",
+
+          navIntensity: "Intensidad",
+          navFreshness: "Frescura",
+          navDashboard: "Panel",
+          navGallery: "Galería",
+          navMap: "Mapa",
+          navSettings: "Ajustes",
+        },
+
+        fr: {
+          titleBloom: "Intensité des Sargasses",
+          subtitleBloom: "Téléverse une image côtière pour estimer l’intensité des sargasses.",
+          titleFresh: "Fraîcheur des Sargasses",
+          subtitleFresh: "Téléverse une image côtière pour classifier sargasses fraîches vs sèches.",
+          uploadLabel: "Téléverser une image",
+          helperText: "Idéal : vues aériennes ou du rivage où les sargasses sont visibles.",
+          footerNote: "Modèle · Teachable Machine · Inférence sur l’appareil",
+          settingsTitle: "Paramètres",
+          language: "Langue",
+          close: "Fermer",
+          classesBloom: ["Forte prolifération", "Légère prolifération", "Aucune prolifération"],
+          classesFresh: ["Frais", "Sec"],
+
+          metricImagesLabel: "Images analysées",
+          metricImagesSub: "Sur les deux modèles (session)",
+          metricBloomLabel: "Exécutions (prolif.)",
+          metricBloomSub: "Forte / Légère / Aucune",
+          metricFreshLabel: "Exécutions (fraîcheur)",
+          metricFreshSub: "Frais vs Sec",
+          dashBloomOverviewTitle: "Aperçu de l’intensité",
+          dashBloomOverviewSubtitle: "Répartition forte, légère et aucune prolifération.",
+          dashFreshDonutTitle: "Frais vs Sec",
+          dashTrendTitle: "Tendance de sévérité",
+          dashConfidenceTitle: "Répartition de confiance",
+          dashIndexPill: "Indice Sargasses",
+          dashIndexCaption: "Score moyen (0 = aucune, 1 = légère, 2 = forte) sur cette session.",
+
+          galleryTitle: "Galerie d’images",
+          gallerySubtitle: "Toutes les images téléversées pendant cette session.",
+          galleryFilterAll: "Tout",
+          galleryFilterHeavy: "Forte",
+          galleryFilterLight: "Légère",
+          galleryFilterNoBloom: "Aucune",
+          galleryFilterFresh: "Frais",
+          galleryFilterDry: "Sec",
+          galleryEmptyNone: "Aucune image — téléverse-en une dans le classificateur pour démarrer la galerie.",
+          galleryEmptyFilter: "Aucune image ne correspond à ce filtre.",
+          pendingLabel: "EN ATTENTE",
+          imageDetailsTitle: "DÉTAILS DE L’IMAGE",
+          detailSub: "Vérifie le résultat, puis ajoute éventuellement une position pour cartographier cette observation.",
+          time: "Heure",
+          country: "Pays",
+          modelWord: "Modèle",
+          confidenceWord: "Confiance",
+          locationPrefix: "Localisation",
+          locationNone: "Aucune",
+          addLocation: "Ajouter une localisation",
+          editLocation: "Modifier la localisation",
+
+          locPickerTitle: "Ajouter une localisation",
+          locPickerSubtitle: "Clique sur la carte pour placer un cercle là où la photo a été prise.",
+          selectedPrefix: "Sélectionné",
+          cancel: "Annuler",
+          save: "Enregistrer",
+
+          bloomChartLabels: ["Forte", "Légère", "Aucune"],
+          freshChartLabels: ["Frais", "Sec"],
+          trendLabelNone: "Aucune",
+          trendLabelLight: "Légère",
+          trendLabelHeavy: "Forte",
+          confLabelsBloom: ["Forte", "Légère", "Aucune"],
+          confLabelsFresh: ["Frais", "Sec"],
+          chartImagesLabel: "Images",
+          chartSeverityLabel: "Sévérité",
+          chartAvgConfidenceLabel: "Confiance moy. (%)",
+
+          mapTitle: "CARTE DES SARGASSES",
+          mapSubtitle: "Visualise l’activité des sargasses dans la région Caraïbe.",
+
+          mapFilterTitle: "Filtre",
+          mapFilterForecasts: "Prévisions",
+
+          popupForecast: "PRÉVISION",
+          popupSeverity: "Sévérité",
+          popupDate: "Date",
+          popupLat: "Lat",
+          popupLng: "Lng",
+
+          galleryLblSeverity: "Sévérité",
+          galleryLblCondition: "État",
+          galleryLblRegion: "Région",
+          galleryLblDate: "Date",
+          galleryLblSort: "Trier",
+
+          optAny: "Tous",
+          optAllTime: "Depuis toujours",
+          optLast24h: "Dernières 24 h",
+          optLast7d: "7 derniers jours",
+          optLast30d: "30 derniers jours",
+          optMostRecent: "Plus récent",
+          optOldest: "Plus ancien",
+
+          mapLayersTitle: "CALQUES DE CARTE",
+          mapLayersBtnTitle: "Calques de la carte",
+          mapLayerWebcams: "Webcams",
+          mapLayerObservations: "Observations",
+
+          webcamStatus: "Statut",
+          webcamLastInference: "Dernière analyse",
+          webcamBloom: "Prolifération",
+          webcamFreshDry: "Frais/Sec",
+          webcamTrend: "Tendance",
+          webcamRun: "Lancer l’analyse",
+          webcamLive: "Vue en direct",
+          webcamFreshVsDryTitle: "Frais vs Sec",
+
+          latShort: "Lat",
+          lngShort: "Lng",
+
+          ariaPrevImage: "Image précédente",
+          ariaNextImage: "Image suivante",
+
+          certHigh: "Élevée (≥80%)",
+          certMedium: "Moyenne (50–80%)",
+          certLow: "Faible (<50%)",
+          certaintyBarLabel: "Certitude",
+
+          mapLayersTitle: "Couches de la carte",
+          mapLayerWebcams: "Webcams",
+          mapLayerObservations: "Observations",
+          mapLayersBtnTitle: "Couches de la carte",
+
+          webcamStatus: "Statut",
+          webcamLastInference: "Dernière analyse",
+          webcamBloom: "Prolifération",
+          webcamFreshDry: "Frais/Sec",
+          webcamTrend: "Tendance",
+          webcamRun: "Lancer l’analyse",
+          webcamLive: "Vue en direct",
+          webcamFreshVsDryTitle: "Frais vs Sec",
+
+          certHigh: "Élevée (≥80%)",
+          certMed: "Moyenne (50–80%)",
+          certLow: "Faible (<50%)",
+
+          toolbarAll: "Tout",
+          severityLabel: "Sévérité",
+          conditionLabel: "État",
+          regionLabel: "Région",
+          dateLabel: "Date",
+          sortLabel: "Trier",
+          anyOption: "Tous",
+          noBloomOption: "Aucune prolifération",
+          allTime: "Depuis toujours",
+          last24h: "Dernières 24 h",
+          last7d: "7 derniers jours",
+          last30d: "30 derniers jours",
+          sortRecent: "Plus récent",
+          sortOldest: "Plus ancien",
+
+          navIntensity: "Intensité",
+          navFreshness: "Fraîcheur",
+          navDashboard: "Tableau de bord",
+          navGallery: "Galerie",
+          navMap: "Carte",
+          navSettings: "Paramètres",
+        },
+
+        nl: {
+          titleBloom: "Sargassum Intensiteit",
+          subtitleBloom: "Upload een kustfoto om de intensiteit van sargassum te schatten.",
+          titleFresh: "Sargassum Versheid",
+          subtitleFresh: "Upload een kustfoto om vers vs droog sargassum te classificeren.",
+          uploadLabel: "Afbeelding uploaden",
+          helperText: "Ideaal: top-down of strandbeelden waarop sargassum zichtbaar is.",
+          footerNote: "Model · Teachable Machine · Inference op het apparaat",
+          settingsTitle: "Instellingen",
+          language: "Taal",
+          close: "Sluiten",
+          classesBloom: ["Zware bloei", "Lichte bloei", "Geen bloei"],
+          classesFresh: ["Vers", "Droog"],
+
+          metricImagesLabel: "Geanalyseerde beelden",
+          metricImagesSub: "Over beide modellen in deze sessie",
+          metricBloomLabel: "Bloei-model runs",
+          metricBloomSub: "Zwaar / Licht / Geen bloei",
+          metricFreshLabel: "Versheid-model runs",
+          metricFreshSub: "Vers vs Droog",
+          dashBloomOverviewTitle: "Overzicht intensiteit",
+          dashBloomOverviewSubtitle: "Verdeling van zwaar, licht en geen bloei.",
+          dashFreshDonutTitle: "Vers vs Droog",
+          dashTrendTitle: "Severiteitstrend",
+          dashConfidenceTitle: "Betrouwbaarheid (confidence)",
+          dashIndexPill: "Sargassum-index",
+          dashIndexCaption: "Gemiddelde bloeiscore (0 = geen, 1 = licht, 2 = zwaar) in deze sessie.",
+
+          galleryTitle: "Afbeeldingengalerij",
+          gallerySubtitle: "Alle afbeeldingen die je in deze sessie hebt geüpload.",
+          galleryFilterAll: "Alles",
+          galleryFilterHeavy: "Zwaar",
+          galleryFilterLight: "Licht",
+          galleryFilterNoBloom: "Geen bloei",
+          galleryFilterFresh: "Vers",
+          galleryFilterDry: "Droog",
+          galleryEmptyNone: "Nog geen afbeeldingen — upload er één in de classifier om te starten.",
+          galleryEmptyFilter: "Geen afbeeldingen die bij dit filter passen.",
+          pendingLabel: "IN AFWACHTING",
+          imageDetailsTitle: "AFBEELDINGDETAILS",
+          detailSub: "Bekijk het resultaat en voeg optioneel een locatie toe om deze observatie te mappen.",
+          time: "Tijd",
+          country: "Land",
+          modelWord: "Model",
+          confidenceWord: "Betrouwbaarheid",
+          locationPrefix: "Locatie",
+          locationNone: "Geen",
+          addLocation: "Locatie toevoegen",
+          editLocation: "Locatie bewerken",
+
+          locPickerTitle: "Locatie toevoegen",
+          locPickerSubtitle: "Klik op de kaart om een cirkel te plaatsen waar deze foto is genomen.",
+          selectedPrefix: "Geselecteerd",
+          cancel: "Annuleren",
+          save: "Opslaan",
+
+          bloomChartLabels: ["Zwaar", "Licht", "Geen"],
+          freshChartLabels: ["Vers", "Droog"],
+          trendLabelNone: "Geen",
+          trendLabelLight: "Licht",
+          trendLabelHeavy: "Zwaar",
+          confLabelsBloom: ["Zwaar", "Licht", "Geen"],
+          confLabelsFresh: ["Vers", "Droog"],
+          chartImagesLabel: "Beelden",
+          chartSeverityLabel: "Severiteit",
+          chartAvgConfidenceLabel: "Gem. confidence (%)",
+
+          mapTitle: "SARGASSUM KAART",
+          mapSubtitle: "Visualiseer sargassum-activiteit in het Caribisch gebied.",
+
+          mapFilterTitle: "Filter",
+          mapFilterForecasts: "Voorspellingen",
+
+          popupForecast: "VOORSPELLING",
+          popupSeverity: "Severiteit",
+          popupDate: "Datum",
+          popupLat: "Lat",
+          popupLng: "Lng",
+
+          galleryLblSeverity: "Ernst",
+          galleryLblCondition: "Conditie",
+          galleryLblRegion: "Regio",
+          galleryLblDate: "Datum",
+          galleryLblSort: "Sorteren",
+
+          optAny: "Alle",
+          optAllTime: "Altijd",
+          optLast24h: "Laatste 24 u",
+          optLast7d: "Laatste 7 d",
+          optLast30d: "Laatste 30 d",
+          optMostRecent: "Meest recent",
+          optOldest: "Oudste",
+
+          mapLayersTitle: "KAARTLAGEN",
+          mapLayersBtnTitle: "Kaartlagen",
+          mapLayerWebcams: "Webcams",
+          mapLayerObservations: "Observaties",
+
+          webcamStatus: "Status",
+          webcamLastInference: "Laatste analyse",
+          webcamBloom: "Bloei",
+          webcamFreshDry: "Vers/Droog",
+          webcamTrend: "Trend",
+          webcamRun: "Analyse uitvoeren",
+          webcamLive: "Livebeeld",
+          webcamFreshVsDryTitle: "Vers vs Droog",
+
+          latShort: "Lat",
+          lngShort: "Lng",
+
+          ariaPrevImage: "Vorige afbeelding",
+          ariaNextImage: "Volgende afbeelding",
+
+          certHigh: "Hoog (≥80%)",
+          certMedium: "Midden (50–80%)",
+          certLow: "Laag (<50%)",
+          certaintyBarLabel: "Zekerheid",
+
+          mapLayersTitle: "Kaartlagen",
+          mapLayerWebcams: "Webcams",
+          mapLayerObservations: "Observaties",
+          mapLayersBtnTitle: "Kaartlagen",
+
+          webcamStatus: "Status",
+          webcamLastInference: "Laatste analyse",
+          webcamBloom: "Bloei",
+          webcamFreshDry: "Vers/Droog",
+          webcamTrend: "Trend",
+          webcamRun: "Analyse uitvoeren",
+          webcamLive: "Livebeeld",
+          webcamFreshVsDryTitle: "Vers vs Droog",
+
+          certHigh: "Hoog (≥80%)",
+          certMed: "Midden (50–80%)",
+          certLow: "Laag (<50%)",
+
+          toolbarAll: "Alles",
+          severityLabel: "Ernst",
+          conditionLabel: "Conditie",
+          regionLabel: "Regio",
+          dateLabel: "Datum",
+          sortLabel: "Sorteren",
+          anyOption: "Alle",
+          noBloomOption: "Geen bloei",
+          allTime: "Altijd",
+          last24h: "Laatste 24 u",
+          last7d: "Laatste 7 d",
+          last30d: "Laatste 30 d",
+          sortRecent: "Meest recent",
+          sortOldest: "Oudste",
+
+          navIntensity: "Intensiteit",
+          navFreshness: "Versheid",
+          navDashboard: "Dashboard",
+          navGallery: "Galerij",
+          navMap: "Kaart",
+          navSettings: "Instellingen",
+        }
+      };
+
+      function getTranslation(lang) {
+        return translations[lang] || translations.en;
+      }
+
+      function getLabelsFor(lang, modelKey) {
+        const t = getTranslation(lang);
+        if (modelKey === "fresh") return t.classesFresh || ["Fresh", "Dry"];
+        return t.classesBloom || ["Class 1", "Class 2", "Class 3"];
+      }
+
+      function updateClassLabelsForLanguage(lang) {
+        const labels = getLabelsFor(lang, currentModelKey);
+        const nameEls = document.querySelectorAll("#label-container .class-name");
+        nameEls.forEach((el, idx) => {
+          const label = labels[idx] || `Class ${idx + 1}`;
+          el.textContent = label.toUpperCase();
+        });
+      }
+
+      function applyLanguage(lang) {
+        currentLanguage = lang;
+        const t = getTranslation(lang);
+
+        const titleEl = document.getElementById("title-text");
+        const subtitleEl = document.getElementById("subtitle-text");
+        const uploadEl = document.getElementById("upload-label");
+        const helperEl = document.getElementById("helper-text");
+        const footerEl = document.getElementById("footer-note-text");
+        const settingsTitleEl = document.getElementById("settings-title");
+        const langLabelEl = document.getElementById("language-label");
+        const closeBtn = document.getElementById("closeSettings");
+        const mapTitleEl = document.getElementById("map-title");
+        const mapSubtitleEl = document.getElementById("map-subtitle");
+
+        const navMap = {
+          bloom: t.navIntensity || "Intensity",
+          fresh: t.navFreshness || "Freshness",
+          dashboard: t.navDashboard || "Dashboard",
+          gallery: t.navGallery || "Gallery",
+          map: t.navMap || "Map",
+          settings: t.navSettings || "Settings"
+        };
+
+        document.querySelectorAll(".side-menu-item[data-model]").forEach(btn => {
+          const key = btn.getAttribute("data-model");
+          const label = key === "bloom" ? navMap.bloom : navMap.fresh;
+          btn.setAttribute("title", label);
+          btn.querySelectorAll("img").forEach(img => img.alt = label);
+        });
+
+        document.querySelectorAll(".side-menu-item[data-action]").forEach(btn => {
+          const action = btn.getAttribute("data-action");
+          const label = navMap[action] || action;
+          btn.setAttribute("title", label);
+          btn.querySelectorAll("img").forEach(img => img.alt = label);
+        });
+
+        if (titleEl) {
+          titleEl.textContent =
+            currentModelKey === "fresh" ? t.titleFresh : t.titleBloom;
+        }
+        if (subtitleEl) {
+          subtitleEl.textContent =
+            currentModelKey === "fresh" ? t.subtitleFresh : t.subtitleBloom;
+        }
+        if (uploadEl) uploadEl.textContent = t.uploadLabel;
+        if (helperEl) helperEl.textContent = t.helperText;
+        if (footerEl) footerEl.textContent = t.footerNote;
+        if (settingsTitleEl) settingsTitleEl.textContent = t.settingsTitle;
+        if (langLabelEl) langLabelEl.textContent = t.language;
+        if (closeBtn) closeBtn.textContent = t.close;
+
+        if (mapTitleEl) mapTitleEl.textContent = t.mapTitle || "SARGASSUM MAP";
+        if (mapSubtitleEl) mapSubtitleEl.textContent = t.mapSubtitle ||
+          "Visualize sargassum activity across the wider Caribbean region.";
+          // ✅ Map layers panel labels
+          const mapLayersTitleEl = document.getElementById("mapLayersTitle");
+          const mapWebcamsLblEl = document.getElementById("mapLayerWebcamsLabel");
+          const mapObsLblEl = document.getElementById("mapLayerObservationsLabel");
+
+          if (mapLayersTitleEl) mapLayersTitleEl.textContent = t.mapLayersTitle || "Map layers";
+          if (mapWebcamsLblEl) mapWebcamsLblEl.textContent = t.mapLayerWebcams || "Webcams";
+          if (mapObsLblEl) mapObsLblEl.textContent = t.mapLayerObservations || "Observations";
+
+        // dashboard labels
+        const ids = [
+          ["metric-images-label", "metricImagesLabel"],
+          ["metric-images-sub", "metricImagesSub"],
+          ["metric-bloom-label", "metricBloomLabel"],
+          ["metric-bloom-sub", "metricBloomSub"],
+          ["metric-fresh-label", "metricFreshLabel"],
+          ["metric-fresh-sub", "metricFreshSub"],
+          ["dash-bloom-overview-title", "dashBloomOverviewTitle"],
+          ["dash-bloom-overview-subtitle", "dashBloomOverviewSubtitle"],
+          ["dash-fresh-donut-title", "dashFreshDonutTitle"],
+          ["dash-trend-title", "dashTrendTitle"],
+          ["dash-confidence-title", "dashConfidenceTitle"],
+          ["dash-index-pill", "dashIndexPill"],
+          ["dash-index-caption", "dashIndexCaption"]
+        ];
+        ids.forEach(([id, key]) => {
+          const el = document.getElementById(id);
+          if (el && t[key]) el.textContent = t[key];
+        });
+
+        // gallery labels
+        const gTitle = document.getElementById("gallery-title");
+        const gSub = document.getElementById("gallery-subtitle");
+
+        if (gTitle) gTitle.textContent = t.galleryTitle || "Image Gallery";
+        if (gSub) gSub.textContent = t.gallerySubtitle || "All images you’ve uploaded this session.";
+
+
+        // ✅ Gallery toolbar labels (filters + sort)
+        const galleryAllBtn = document.getElementById("galleryResetBtn");
+        if (galleryAllBtn) galleryAllBtn.textContent = t.toolbarAll || t.galleryFilterAll || "All";
+
+        // Severity
+        const lblSeverity = document.getElementById("lblSeverity");
+        const optSeverityAny = document.getElementById("optSeverityAny");
+        const optSeverityHeavy = document.getElementById("optSeverityHeavy");
+        const optSeverityLight = document.getElementById("optSeverityLight");
+        const optSeverityNo = document.getElementById("optSeverityNo");
+
+        if (lblSeverity) lblSeverity.textContent = t.severityLabel || t.galleryLblSeverity || "Severity";
+        if (optSeverityAny) optSeverityAny.textContent = t.anyOption || t.optAny || "Any";
+        if (optSeverityHeavy) optSeverityHeavy.textContent = t.galleryFilterHeavy || "Heavy";
+        if (optSeverityLight) optSeverityLight.textContent = t.galleryFilterLight || "Light";
+        if (optSeverityNo) optSeverityNo.textContent = t.noBloomOption || t.galleryFilterNoBloom || "No Bloom";
+
+        // Condition
+        const lblCondition = document.getElementById("lblCondition");
+        const optCondAny = document.getElementById("optCondAny");
+        const optCondFresh = document.getElementById("optCondFresh");
+        const optCondDry = document.getElementById("optCondDry");
+
+        if (lblCondition) lblCondition.textContent = t.conditionLabel || t.galleryLblCondition || "Condition";
+        if (optCondAny) optCondAny.textContent = t.anyOption || t.optAny || "Any";
+        if (optCondFresh) optCondFresh.textContent = t.galleryFilterFresh || "Fresh";
+        if (optCondDry) optCondDry.textContent = t.galleryFilterDry || "Dry";
+
+        // Region
+        const lblRegion = document.getElementById("lblRegion");
+        const optRegionAny = document.getElementById("optRegionAny");
+
+        if (lblRegion) lblRegion.textContent = t.regionLabel || t.galleryLblRegion || "Region";
+        if (optRegionAny) optRegionAny.textContent = t.anyOption || t.optAny || "Any";
+
+        // Date
+        const lblDate = document.getElementById("lblDate");
+        const optDateAll = document.getElementById("optDateAll");
+        const optDate24 = document.getElementById("optDate24");
+        const optDate7 = document.getElementById("optDate7");
+        const optDate30 = document.getElementById("optDate30");
+
+        if (lblDate) lblDate.textContent = t.dateLabel || t.galleryLblDate || "Date";
+        if (optDateAll) optDateAll.textContent = t.allTime || t.optAllTime || "All time";
+        if (optDate24) optDate24.textContent = t.last24h || t.optLast24h || "Last 24h";
+        if (optDate7) optDate7.textContent = t.last7d || t.optLast7d || "Last 7d";
+        if (optDate30) optDate30.textContent = t.last30d || t.optLast30d || "Last 30d";
+
+        // Sort
+        const lblSort = document.getElementById("lblSort");
+        const optSortRecent = document.getElementById("optSortRecent");
+        const optSortOldest = document.getElementById("optSortOldest");
+
+        if (lblSort) lblSort.textContent = t.sortLabel || t.galleryLblSort || "Sort";
+        if (optSortRecent) optSortRecent.textContent = t.sortRecent || t.optMostRecent || "Most recent";
+        if (optSortOldest) optSortOldest.textContent = t.sortOldest || t.optOldest || "Oldest";
+
+        
+        // gallery detail modal strings
+        const detailTitle = document.getElementById("detailTitle");
+        const detailClose = document.getElementById("detailCloseBtn");
+        const detailSub = document.getElementById("detailSub");
+        const timeLbl = document.getElementById("detailTimeLabel");
+        const countryLbl = document.getElementById("detailCountryLabel");
+        const modelLbl = document.getElementById("detailModelLabel");
+        const confLbl = document.getElementById("detailConfidenceLabel");
+
+        if (detailTitle) detailTitle.textContent = t.imageDetailsTitle || "IMAGE DETAILS";
+        if (detailClose) detailClose.textContent = t.close || "Close";
+        if (detailSub) detailSub.textContent = t.detailSub || detailSub.textContent;
+        if (timeLbl) timeLbl.textContent = t.time || "Time";
+        if (countryLbl) countryLbl.textContent = t.country || "Country";
+        if (modelLbl) modelLbl.textContent = t.modelWord || "Model";
+        if (confLbl) confLbl.textContent = t.confidenceWord || "Confidence";
+
+        // location picker modal strings
+        const lpTitle = document.getElementById("locPickerTitle");
+        const lpSub = document.getElementById("locPickerSubtitle");
+        const lpCancel = document.getElementById("locCancelBtn");
+        const lpSave = document.getElementById("locSaveBtn");
+        if (lpTitle) lpTitle.textContent = t.locPickerTitle || "Add location";
+        if (lpSub) lpSub.textContent = t.locPickerSubtitle || "Click on the map to drop a circle where this photo was taken.";
+        if (lpCancel) lpCancel.textContent = t.cancel || "Cancel";
+        if (lpSave) lpSave.textContent = t.save || "Save";
+
+        // keep location label / button consistent with language
+        updateDetailLocationLabel();
+        const locSelText = document.getElementById("locSelectedText");
+        if (locSelText) {
+          const prefix = t.selectedPrefix || "Selected";
+          locSelText.textContent = locSelected ? `${prefix}: ${locSelected.lat.toFixed(4)}, ${locSelected.lng.toFixed(4)}` : `${prefix}: ${t.locationNone || "None"}`;
+        }
+
+        updateClassLabelsForLanguage(lang);
+        renderGallery();
+        updateDashboardStats();
+        if (leafletMap && markerLayer) refreshMapMarkers(); // so popup labels update
+      }
+
+      function initLanguage() {
+        const saved = localStorage.getItem("sargiLang") || "en";
+        currentLanguage = saved;
+        const select = document.getElementById("languageSelect");
+        if (select) select.value = saved;
+        applyLanguage(saved);
+      }
+
+      /* --------- VIEW TOGGLING --------- */
+      function toggleView(view) {
+        const classifier = document.getElementById("classifier-view");
+        const dashboard = document.getElementById("dashboard-view");
+        const gallery = document.getElementById("gallery-view");
+        const mapView = document.getElementById("map-view");
+        if (!classifier || !dashboard || !gallery || !mapView) return;
+
+        if (view !== "classifier") resetClassifierUI();
+
+        if (view === "dashboard") {
+          classifier.style.display = "none";
+          dashboard.style.display = "block";
+          gallery.style.display = "none";
+          mapView.style.display = "none";
+        } else if (view === "gallery") {
+          classifier.style.display = "none";
+          dashboard.style.display = "none";
+          gallery.style.display = "block";
+          mapView.style.display = "none";
+        } else if (view === "map") {
+          classifier.style.display = "none";
+          dashboard.style.display = "none";
+          gallery.style.display = "none";
+          mapView.style.display = "block";
+          initMap();
+          refreshMapMarkers();
+        } else {
+          classifier.style.display = "block";
+          dashboard.style.display = "none";
+          gallery.style.display = "none";
+          mapView.style.display = "none";
+        }
+      }
+
+      function setActiveNav(btn) {
+        const all = document.querySelectorAll(".side-menu-item");
+        all.forEach(b => b.classList.remove("active"));
+        if (btn) btn.classList.add("active");
+      }
+
+      /* --------- MAP TILE (DARK) --------- */
+      const DARK_TILE_URL = "https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png";
+      const DARK_TILE_ATTR = "&copy; OpenStreetMap contributors &copy; CARTO";
+
+      function addDarkTiles(mapInstance) {
+        return L.tileLayer(DARK_TILE_URL, {
+          maxZoom: 19,
+          attribution: DARK_TILE_ATTR
+        }).addTo(mapInstance);
+      }
+
+      /* --------- MAP INITIALIZATION --------- */
+      function initMap() {
+        if (leafletMap) {
+          leafletMap.invalidateSize();
+          return;
+        }
+
+        const mapElement = document.getElementById("mapContainer");
+        if (!mapElement) return;
+
+        leafletMap = L.map("mapContainer", {
+          center: [20, -70],
+          zoom: 4,
+          zoomControl: true
+        });
+
+        addDarkTiles(leafletMap);
+
+        // circles (your uploaded observations)
+        markerLayer = L.layerGroup().addTo(leafletMap);
+
+        // webcams (fixed icons)
+        webcamLayer = L.layerGroup().addTo(leafletMap);
+
+        setupMapFilters();
+        addWebcamMarkers(); // ✅ add them once
+        addMapLayersToggleButton();
+      }
+
+      function addWebcamMarkers() {
+        if (!leafletMap || !webcamLayer) return;
+
+          webcamLayer.clearLayers();
+
+          const webcamIcon = L.divIcon({
+            className: "webcam-div-icon",
+            iconSize: [22, 22],
+            iconAnchor: [11, 11],
+            html: `<div class="webcam-marker">
+                    <img src="webcam-icon.png" alt="Webcam" />
+                  </div>`
+          });
+
+      function centerOpenedPopup(marker) {
+      if (!leafletMap || !marker) return;
+
+      const popup = marker.getPopup?.();
+      if (!popup) return;
+
+      const doCenter = () => {
+        const popupEl = popup.getElement?.();
+        const mapEl = leafletMap.getContainer?.();
+        if (!popupEl || !mapEl) return;
+
+        const mapRect = mapEl.getBoundingClientRect();
+        const popRect = popupEl.getBoundingClientRect();
+
+        const targetX = mapRect.left + mapRect.width / 2;
+        const targetY = mapRect.top + mapRect.height / 2;
+
+        const popCenterX = popRect.left + popRect.width / 2;
+        const popCenterY = popRect.top + popRect.height / 2;
+
+        const dx = targetX - popCenterX;
+        const dy = targetY - popCenterY;
+
+        leafletMap.panBy([dx, dy], { animate: true, duration: 0.35 });
+      };
+
+        // 1) after DOM placement
+        requestAnimationFrame(() => requestAnimationFrame(doCenter));
+
+        // 2) after iframe/content finishes affecting layout
+        setTimeout(doCenter, 250);
+
+        // 3) if iframe exists, re-center after it loads
+        setTimeout(() => {
+          const popupEl = popup.getElement?.();
+          const iframe = popupEl?.querySelector("iframe");
+          if (iframe) {
+            iframe.addEventListener("load", () => setTimeout(doCenter, 80), { once: true });
+          }
+        }, 0);
+      }
+
+
+      // ✅ Webcam list (add more here)
+      webcamsData = [
+      {
+        id: "kb_beach",
+        name: "Key Biscayne - Beach",
+        lat: 25.689444,
+        lng: -80.156667,
+        status: "Online",
+        lastUpdate: "Live",
+        zoomOnClick: 13,
+        iframeUrl: "https://webcams.windy.com/webcams/stream/1621689267"
+      },
+      {
+        id: "kb_kite",
+        name: "Key Biscayne - KiteBoarding",
+        lat: 25.713889,
+        lng: -80.151667,
+        status: "Online",
+        lastUpdate: "Live",
+        zoomOnClick: 13,
+        iframeUrl: "https://g1.ipcamlive.com/player/player.php?alias=6030787be95a2"
+      },
+      {
+        id: "mx_rivera",
+        name: "Rivera Maya - Casa Malca",
+        lat: 20.133699,
+        lng: -87.463159,
+        status: "Online",
+        lastUpdate: "Live",
+        zoomOnClick: 13,
+        iframeUrl: "https://webcams.windy.com/webcams/stream/1705773347?utm_source=chatgpt.com"
+      },
+      {
+        id: "pr_riomar",
+        name: "Puerto Rico - Rio Mar",
+        lat: 18.391646,
+        lng: -65.758173,
+        status: "Online",
+        lastUpdate: "Live",
+        zoomOnClick: 13,
+        iframeUrl: "https://g1.ipcamlive.com/player/player.php?alias=beachwebcam"
+      }
+    ];
+
+
+        webcamsData.forEach((cam) => {
+          ensureWebcamSeed(cam.id);
+
+          const t = getTranslation(currentLanguage);
+
+          const latest = getWebcamLatest(cam.id);
+          const lastStr = latest ? new Date(latest.time).toLocaleTimeString([], { hour:"2-digit", minute:"2-digit" }) : "—";
+          const bloomStr = latest
+            ? (latest.bloomScore === 2 ? (t.trendLabelHeavy || "Heavy") :
+              latest.bloomScore === 1 ? (t.trendLabelLight || "Light") :
+              (t.trendLabelNone || "No bloom"))
+            : "—";
+
+          const popupHtml = `
+            <div class="webcam-popup">
+              <div class="popup-title">${cam.name}</div>
+
+              <div class="webcam-popup-embed">
+                <div style="padding:6px 8px; font-size:11px; opacity:.85;">
+                  ${t.webcamLive || "Live view"}
+                </div>
+                ${cam.iframeUrl ? `
+                  <iframe src="${cam.iframeUrl}" loading="lazy"></iframe>
+                ` : ``}
+              </div>
+
+              <div class="webcam-popup-kv">
+                <span class="label">${t.webcamStatus || "Status"}</span>
+                <span class="value">${cam.status}</span>
+              </div>
+
+              <div class="webcam-popup-kv">
+                <span class="label">${t.webcamLastInference || "Last inference"}</span>
+                <span class="value" id="camLast-${cam.id}">${lastStr}</span>
+              </div>
+
+              <div class="webcam-popup-kv">
+                <span class="label">${t.webcamBloom || "Bloom"}</span>
+                <span class="value" id="camBloom-${cam.id}">${bloomStr}</span>
+              </div>
+
+              <div class="webcam-popup-kv">
+                <span class="label">${t.webcamFreshDry || "Fresh/Dry"}</span>
+                <span class="value" id="camFresh-${cam.id}">—</span>
+              </div>
+
+              <div class="webcam-popup-mini-title">${t.webcamFreshVsDryTitle || (t.webcamFreshDry || "Fresh/Dry")}</div>
+              <div class="webcam-donut-wrap">
+                <canvas class="webcam-donut-canvas" id="camDonut-${cam.id}"></canvas>
+              </div>
+
+              <div class="webcam-popup-mini-title">${t.webcamTrend || "Trend"}</div>
+              <div style="height:90px;">
+                <canvas class="webcam-mini-canvas" id="camTrend-${cam.id}"></canvas>
+              </div>
+
+              <button class="webcam-popup-btn" id="camRunBtn-${cam.id}" type="button">
+                ${t.webcamRun || "Run analysis"}
+              </button>
+
+              <div class="popup-row" style="opacity:.70; margin-top:8px;">
+                ${t.popupLat || "Lat"}: ${cam.lat.toFixed(4)} · ${t.popupLng || "Lng"}: ${cam.lng.toFixed(4)}
+              </div>
+            </div>
+          `;
+
+      // Center an opened Leaflet popup in the middle of the map container
+      function centerOpenedPopup(marker) {
+        if (!leafletMap || !marker) return;
+
+        const popup = marker.getPopup?.();
+        if (!popup) return;
+
+        // Wait a moment so Leaflet has actually placed the popup in the DOM
+        setTimeout(() => {
+          const popupEl = popup.getElement?.();
+          const mapEl = leafletMap.getContainer?.();
+          if (!popupEl || !mapEl) return;
+
+          const mapRect = mapEl.getBoundingClientRect();
+          const popRect = popupEl.getBoundingClientRect();
+
+          // Map container center
+          const targetX = mapRect.left + mapRect.width / 2;
+          const targetY = mapRect.top + mapRect.height / 2;
+
+          // Popup center
+          const popCenterX = popRect.left + popRect.width / 2;
+          const popCenterY = popRect.top + popRect.height / 2;
+
+          // How far we need to move the map so popup is centered
+          const dx = targetX - popCenterX;
+          const dy = targetY - popCenterY;
+
+          // Pan the map by that pixel amount
+          leafletMap.panBy([dx, dy], { animate: true, duration: 0.4 });
+        }, 60);
+      }
+
+
+          const m = L.marker([cam.lat, cam.lng], { icon: webcamIcon })
+            .addTo(webcamLayer)
+            .bindPopup(popupHtml, { className: "sargi-popup", maxWidth: 320 });
+
+          // When popup opens, render the mini chart
+          m.on("click", (e) => {
+            leafletMap.flyTo(e.latlng, cam.zoomOnClick ?? 13, { animate: true, duration: 0.6 });
+
+            leafletMap.once("moveend", () => {
+              m.openPopup();
+
+              // wait one frame so Leaflet inserts the popup HTML
+              requestAnimationFrame(() => {
+        // Render charts once popup HTML exists
+        renderWebcamPopupChart(cam.id);
+        renderWebcamPopupDonut(cam.id);
+
+        // ✅ Fix stretched text: force Chart.js to fit the final popup size
+        setTimeout(() => {
+          webcamCharts[cam.id]?.resize();
+          webcamDonuts[cam.id]?.resize();
+        }, 60);
+
+        // ✅ Wire the button
+        const btn = document.getElementById(`camRunBtn-${cam.id}`);
+        if (btn) {
+          btn.onclick = () => runWebcamInference(cam.id);
+        }
+
+        centerOpenedPopup(m);
+      });
+
+            });
+          });
+        });
+      }
+
+
+      function getCircleStyleForItem(item) {
+        let fill = "#9aa3af";
+        let stroke = "#6b7280";
+
+        if (item.model === "bloom" && typeof item.classIndex === "number") {
+          if (item.classIndex === 0) { fill = "#c94f4f"; stroke = "#9c3b3b"; }
+          else if (item.classIndex === 1) { fill = "#e6aa3e"; stroke = "#b37d20"; }
+          else { fill = "#62ab81"; stroke = "#4d916d"; }
+        }
+
+        return {
+          radius: 10,
+          color: stroke,
+          weight: 2,
+          fillColor: fill,
+          fillOpacity: 0.65
+        };
+      }
+
+      function refreshMapMarkers() {
+        if (!leafletMap || !markerLayer) return;
+        markerLayer.clearLayers();
+
+        galleryImages.forEach((item) => {
+          if (typeof item.lat !== "number" || typeof item.lng !== "number") return;
+
+          const t = getTranslation(currentLanguage);
+
+          let label = t.pendingLabel || "PENDING";
+          if (item.model === "bloom" && typeof item.classIndex === "number") {
+            label = (t.classesBloom[item.classIndex] || label);
+          } else if (item.model === "fresh" && typeof item.classIndex === "number") {
+            label = (t.classesFresh[item.classIndex] || label);
+          }
+
+          const conf = (typeof item.confidence === "number")
+            ? `${Math.round(item.confidence * 100)}%`
+            : "—";
+
+          const dateStr = item.time
+            ? new Date(item.time).toLocaleString([], { year:"numeric", month:"short", day:"2-digit" })
+            : "—";
+
+          const countryLine = item.country
+            ? `<div class="popup-row">${t.country || "Country"}: <span class="popup-accent">${item.country}</span></div>`
+            : "";
+
+          const popup = `
+            <div>
+              ${item.src ? `<img class="popup-img" src="${item.src}" alt="Observation" />` : ""}
+              <div class="popup-title">${label}</div>
+
+              <div class="popup-row">${t.confidenceWord || "Confidence"}: <span class="popup-accent">${conf}</span></div>
+              <div class="popup-row">${t.popupDate || "Date"}: <span class="popup-accent">${dateStr}</span></div>
+              ${countryLine}
+
+              <div class="popup-row" style="opacity:.75;margin-top:6px;">
+                ${t.popupLat || "Lat"}: ${item.lat.toFixed(4)} · ${t.popupLng || "Lng"}: ${item.lng.toFixed(4)}
+              </div>
+            </div>
+          `;
+
+          const m = L.circleMarker([item.lat, item.lng], getCircleStyleForItem(item))
+          .addTo(markerLayer)
+          .bindPopup(popup, { className: "sargi-popup", maxWidth: 260 });
+
+          m.on("click", (e) => {
+          leafletMap.flyTo(e.latlng, MARKER_CLICK_ZOOM, { animate: true, duration: 0.6 });
+          m.openPopup();
+        });
+        });
+      }
+
+      function setupMapFilters() {
+        const webcamsToggle = document.getElementById("toggleWebcams");
+        const obsToggle = document.getElementById("toggleObservations");
+
+        if (webcamsToggle) {
+          webcamsToggle.addEventListener("change", () => {
+            if (!leafletMap || !webcamLayer) return;
+            if (webcamsToggle.checked) {
+              leafletMap.addLayer(webcamLayer);
+            } else {
+              leafletMap.removeLayer(webcamLayer);
+            }
+          });
+        }
+
+        if (obsToggle) {
+          obsToggle.addEventListener("change", () => {
+            if (!leafletMap || !markerLayer) return;
+            if (obsToggle.checked) {
+              leafletMap.addLayer(markerLayer);
+            } else {
+              leafletMap.removeLayer(markerLayer);
+            }
+          });
+        }
+      }
+
+      function addMapLayersToggleButton() {
+        if (!leafletMap) return;
+
+        // prevent duplicates if initMap runs again
+        if (leafletMap.__layersToggleAdded) return;
+        leafletMap.__layersToggleAdded = true;
+
+        const LayersBtn = L.Control.extend({
+          options: { position: "topleft" },
+
+          onAdd: function () {
+            const btn = L.DomUtil.create("div", "leaflet-control-layers-toggle-btn");
+            const t = getTranslation(currentLanguage);
+            btn.title = t.mapLayersBtnTitle || "Map layers";
+
+            // simple "sliders" icon
+            btn.innerHTML = `
+              <svg viewBox="0 0 24 24" fill="none">
+                <path d="M4 7h10" stroke="white" stroke-width="2" stroke-linecap="round"/>
+                <path d="M18 7h2" stroke="white" stroke-width="2" stroke-linecap="round"/>
+                <circle cx="16" cy="7" r="2" fill="white"/>
+
+                <path d="M4 17h6" stroke="white" stroke-width="2" stroke-linecap="round"/>
+                <path d="M14 17h6" stroke="white" stroke-width="2" stroke-linecap="round"/>
+                <circle cx="12" cy="17" r="2" fill="white"/>
+              </svg>
+            `;
+
+            // stop map dragging/zooming when clicking the button
+            L.DomEvent.disableClickPropagation(btn);
+            L.DomEvent.on(btn, "click", () => {
+              const mapEl = document.getElementById("mapContainer");
+              if (!mapEl) return;
+
+              const panel = mapEl.querySelector(".map-filter-panel");
+              if (!panel) return;
+
+              // toggle visibility
+              const willShow = panel.classList.contains("is-hidden");
+              panel.classList.toggle("is-hidden");
+
+              // if opening, position it near the button (blue rectangle vibe)
+              if (willShow) {
+                const btnRect = btn.getBoundingClientRect();
+                const mapRect = mapEl.getBoundingClientRect();
+
+                // place it a bit RIGHT of the left controls, and slightly LOWER
+                const left = (btnRect.right - mapRect.left) - 36;
+                const top  = (btnRect.top - mapRect.top) + 44;
+
+                panel.style.left = `${left}px`;
+                panel.style.top  = `${top}px`;
+              }
+            });
+
+            return btn;
+          }
+        });
+
+        leafletMap.addControl(new LayersBtn());
+      }
+
+      /* --------- Reverse geocode country (OSM Nominatim) --------- */
+      async function reverseGeocodeCountry(lat, lng) {
+        try {
+          const url =
+            `https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${encodeURIComponent(lat)}&lon=${encodeURIComponent(lng)}`;
+          const res = await fetch(url, { headers: { "Accept": "application/json" }});
+          if (!res.ok) return null;
+          const data = await res.json();
+          return data?.address?.country || null;
+        } catch (e) {
+          return null;
+        }
+      }
+
+      /* --------- LOCATION PICKER --------- */
+      function openLocationPicker() {
+        const modal = document.getElementById("locPickerModal");
+        const saveBtn = document.getElementById("locSaveBtn");
+        const selectedText = document.getElementById("locSelectedText");
+        if (!modal) return;
+
+        const t = getTranslation(currentLanguage);
+
+        modal.style.display = "flex";
+
+        // Reset picker state every time you open it
+        locSelected = null;
+        if (selectedText) selectedText.textContent = `${t.selectedPrefix || "Selected"}: ${t.locationNone || "None"}`;
+        if (saveBtn) saveBtn.disabled = true;
+
+        if (!locPickerMap) {
+          locPickerMap = L.map("locPickerMap", {
+            center: LOC_DEFAULT_CENTER,
+            zoom: LOC_DEFAULT_ZOOM,
+            zoomControl: true
+          });
+
+          addDarkTiles(locPickerMap);
+
+          locPickerMap.on("click", (e) => {
+            const { lat, lng } = e.latlng;
+            locSelected = { lat, lng };
+
+            locPickerMap.flyTo([lat, lng], LOC_PICK_ZOOM, { animate: true, duration: 0.6 });
+
+            if (locPickerCircle) locPickerCircle.remove();
+            const item = galleryImages[currentDetailIndex] || {};
+            locPickerCircle = L.circleMarker([lat, lng], getCircleStyleForItem(item))
+              .addTo(locPickerMap);
+
+            const t2 = getTranslation(currentLanguage);
+            if (selectedText) selectedText.textContent = `${t2.selectedPrefix || "Selected"}: ${lat.toFixed(4)}, ${lng.toFixed(4)}`;
+            if (saveBtn) saveBtn.disabled = false;
+          });
+        }
+
+        // IMPORTANT: clear previous circle + reset view when opening for a new image
+        if (locPickerCircle) {
+          locPickerCircle.remove();
+          locPickerCircle = null;
+        }
+
+        setTimeout(() => locPickerMap.invalidateSize(), 60);
+
+        const item = galleryImages[currentDetailIndex];
+
+        if (item && typeof item.lat === "number" && typeof item.lng === "number") {
+          // If this image already has a saved location, show it
+          locPickerMap.setView([item.lat, item.lng], LOC_PICK_ZOOM);
+          locPickerCircle = L.circleMarker([item.lat, item.lng], getCircleStyleForItem(item))
+            .addTo(locPickerMap);
+
+          locSelected = { lat: item.lat, lng: item.lng };
+          if (selectedText) selectedText.textContent =
+            `${t.selectedPrefix || "Selected"}: ${item.lat.toFixed(4)}, ${item.lng.toFixed(4)}`;
+          if (saveBtn) saveBtn.disabled = false;
+        } else {
+          // Otherwise ALWAYS go back to the default Caribbean view
+          locPickerMap.setView(LOC_DEFAULT_CENTER, LOC_DEFAULT_ZOOM);
+        }
+      }
+
+      function closeLocationPicker() {
+        const modal = document.getElementById("locPickerModal");
+        if (modal) modal.style.display = "none";
+      }
+
+      async function savePickedLocation() {
+        if (currentDetailIndex == null || !galleryImages[currentDetailIndex] || !locSelected) return;
+
+        const item = galleryImages[currentDetailIndex];
+        item.lat = locSelected.lat;
+        item.lng = locSelected.lng;
+
+        // ✅ Close immediately (don’t wait for network)
+        closeLocationPicker();
+
+        // Update UI right away
+        updateDetailLocationLabel();
+        renderGallery();
+        if (leafletMap && markerLayer) refreshMapMarkers();
+        if (leafletMap) {
+        leafletMap.flyTo([item.lat, item.lng], MARKER_CLICK_ZOOM, { animate: true, duration: 0.6 });
+      }
+
+
+      // Fetch country AFTER closing (best UX)
+      try {
+        const country = await reverseGeocodeCountry(item.lat, item.lng);
+          if (country) {
+        item.country = country;
+
+        // Update detail panel if it’s open
+        const countryEl = document.getElementById("detailCountry");
+        if (countryEl) countryEl.textContent = item.country ? item.country : "—";
+
+        // Re-render so gallery time label can show "· Country"
+          renderGallery();
+        if (leafletMap && markerLayer) refreshMapMarkers();
+        }
+          } catch (e) {
+          // ignore geocode errors; location still saved
+        }
+      }
+
+
+      function setupGalleryToolbar() {
+      const resetBtn = document.getElementById("galleryResetBtn");
+      const sev = document.getElementById("filterSeverity");
+      const cond = document.getElementById("filterCondition");
+      const reg = document.getElementById("filterRegion");
+      const date = document.getElementById("filterDate");
+      const sort = document.getElementById("sortGallery");
+
+      const apply = () => {
+        galleryFilters.severity = sev ? sev.value : "any";
+        galleryFilters.condition = cond ? cond.value : "any";
+        galleryFilters.region = reg ? reg.value : "any";
+        galleryFilters.date = date ? date.value : "all";
+      galleryFilters.sort = sort ? sort.value : "recent";
+
+      if (resetBtn) {
+        const isDefault =
+          galleryFilters.severity === "any" &&
+          galleryFilters.condition === "any" &&
+          galleryFilters.region === "any" &&
+          galleryFilters.date === "all" &&
+          galleryFilters.sort === "recent";
+        resetBtn.classList.toggle("active", isDefault);
+      }
+
+      renderGallery();
+      };
+
+      if (resetBtn) {
+      resetBtn.addEventListener("click", () => {
+        galleryFilters = { severity:"any", condition:"any", region:"any", date:"all", sort:"recent" };
+        if (sev) sev.value = "any";
+        if (cond) cond.value = "any";
+        if (reg) reg.value = "any";
+        if (date) date.value = "all";
+        if (sort) sort.value = "recent";
+        resetBtn.classList.add("active");
+        renderGallery();
+        });
+        }
+
+        [sev, cond, reg, date, sort].forEach(el => {
+        if (el) el.addEventListener("change", apply);
+          });
+        }
+
+      /* --------- MODEL LOADING --------- */
+      async function loadModel() {
+        const folder = modelFolders[currentModelKey];
+        const modelURL = folder + "model.json";
+        const metadataURL = folder + "metadata.json";
+
+        model = await tmImage.load(modelURL, metadataURL);
+        maxPredictions = model.getTotalClasses();
+
+        labelContainer = document.getElementById("label-container");
+        labelContainer.innerHTML = "";
+
+        const labels = getLabelsFor(currentLanguage, currentModelKey);
+
+        for (let i = 0; i < maxPredictions; i++) {
+          const row = document.createElement("div");
+          row.className = "prediction-row";
+
+          const header = document.createElement("div");
+          header.className = "prediction-header";
+
+          const classSpan = document.createElement("span");
+          classSpan.className = "class-name";
+          const label = labels[i] || `Class ${i + 1}`;
+          classSpan.textContent = label.toUpperCase();
+
+          const percentSpan = document.createElement("span");
+          percentSpan.className = "percent";
+          percentSpan.textContent = "0.0%";
+
+          header.appendChild(classSpan);
+          header.appendChild(percentSpan);
+
+          const bar = document.createElement("div");
+          bar.className = "prediction-bar";
+
+          const barFill = document.createElement("div");
+          barFill.className = "prediction-bar-fill";
+          bar.appendChild(barFill);
+
+          row.appendChild(header);
+          row.appendChild(bar);
+          labelContainer.appendChild(row);
+        }
+
+        modelLoaded = true;
+      }
+
+      async function handleImageUpload(event) {
+        const file = event.target.files[0];
+        if (!file) return;
+
+        if (!modelLoaded) await loadModel();
+
+        const preview = document.getElementById("preview");
+        const previewFrame = document.getElementById("preview-frame");
+        const reader = new FileReader();
+
+        reader.onload = function (e) {
+          const dataUrl = e.target.result;
+
+          lastGalleryIndex = addToGallery(dataUrl);
+
+          preview.src = dataUrl;
+          if (previewFrame) previewFrame.style.display = "block";
+
+          preview.onload = function () {
+            predict(preview, lastGalleryIndex);
+          };
+        };
+
+        reader.readAsDataURL(file);
+      }
+
+      function recordPredictionForDashboard(prediction, bestIdx, bestProb) {
+        if (!prediction || !prediction.length) return;
+
+        if (bestIdx == null || bestProb == null) {
+          bestIdx = 0;
+          bestProb = -1;
+          for (let i = 0; i < prediction.length; i++) {
+            if (prediction[i].probability > bestProb) {
+              bestProb = prediction[i].probability;
+              bestIdx = i;
+            }
+          }
+        }
+
+        const probs = prediction.map(p => p.probability);
+
+        predictionHistory.push({
+          model: currentModelKey,
+          classIndex: bestIdx,
+          confidence: bestProb,
+          probs,
+          time: Date.now()
+        });
+
+        updateDashboardStats();
+      }
+
+      function updateDashboardStats() {
+        const totalEl = document.getElementById("metric-total");
+        const bloomEl = document.getElementById("metric-bloom");
+        const freshEl = document.getElementById("metric-fresh");
+        const indexEl = document.getElementById("indexValue");
+
+        let total = predictionHistory.length;
+
+        let bloomCounts = [0, 0, 0];
+        let freshCounts = [0, 0];
+        let bloomTotal = 0;
+        let freshTotal = 0;
+
+        predictionHistory.forEach(p => {
+          if (p.model === "bloom") {
+            bloomTotal++;
+            if (bloomCounts[p.classIndex] !== undefined) {
+              bloomCounts[p.classIndex]++;
+            }
+          } else if (p.model === "fresh") {
+            freshTotal++;
+            if (freshCounts[p.classIndex] !== undefined) {
+              freshCounts[p.classIndex]++;
+            }
+          }
+        });
+
+        if (totalEl) totalEl.textContent = total;
+        if (bloomEl) bloomEl.textContent = bloomTotal;
+        if (freshEl) freshEl.textContent = freshTotal;
+
+        let index = 0;
+        if (bloomTotal > 0) {
+          index = (2*bloomCounts[0] + 1*bloomCounts[1]) / bloomTotal;
+        }
+        if (indexEl) indexEl.textContent = index.toFixed(2);
+
+        updateCharts(bloomCounts, freshCounts, total);
+      }
+
+      function updateCharts(bloomCounts, freshCounts, total) {
+        const t = getTranslation(currentLanguage);
+
+        const bloomLabels = t.bloomChartLabels || ["Heavy bloom", "Light bloom", "No bloom"];
+        const freshLabels = t.freshChartLabels || ["Fresh", "Dry"];
+
+        const barCtx = document.getElementById("bloomBarChart");
+        if (barCtx) {
+          const bloomRelevant = predictionHistory.filter(p => p.model === "bloom");
+
+          let bloomSums = [0, 0, 0];
+          let bloomCountsForAvg = [0, 0, 0];
+
+          bloomRelevant.forEach(p => {
+            (p.probs || []).forEach((prob, idx) => {
+              if (idx < 3) {
+                bloomSums[idx] += prob;
+                bloomCountsForAvg[idx] += 1;
+              }
+            });
+          });
+
+        const bloomAvgProbs = bloomSums.map((sum, i) =>
+          bloomCountsForAvg[i] > 0 ? (sum / bloomCountsForAvg[i]) * 100 : 0
+        );
+
+        const barData = {
+          labels: bloomLabels,
+          datasets: [{
+            label: t.chartAvgConfidenceLabel || "Avg confidence (%)",
+            data: bloomAvgProbs,
+            borderWidth: 1,
+            backgroundColor: "#62ab81",
+            borderColor: "#4d916d",
+            borderRadius: 6
+          }]
+        };
+
+        const barOptions = {
+          plugins: { legend: { display: false } },
+          scales: {
+            x: { ticks: { color: "#e5e9ff", font: { size: 11 } } },
+            y: {
+              min: 0,
+              max: 100,
+              ticks: {
+                stepSize: 25,
+                color: "#e5e9ff",
+                font: { size: 11 },
+                callback: v => v + "%"
+              },
+              beginAtZero: true
+            }
+          }
+        };
+
+        if (!bloomBarChart) {
+          bloomBarChart = new Chart(barCtx, {
+            type: "bar",
+            data: barData,
+            options: barOptions
+          });
+        } else {
+          bloomBarChart.data = barData;
+          bloomBarChart.options = barOptions;
+          bloomBarChart.update();
+        }
+      }
+
+        const donutFreshCtx = document.getElementById("freshDonut");
+        if (donutFreshCtx) {
+          // ✅ Use model probabilities (avg %) instead of counts
+          const freshRelevant = predictionHistory.filter(p => p.model === "fresh");
+
+          let freshSums = [0, 0]; // [freshProbSum, dryProbSum]
+          freshRelevant.forEach(p => {
+          if (p.probs && p.probs.length >= 2) {
+            freshSums[0] += (p.probs[0] || 0);
+            freshSums[1] += (p.probs[1] || 0);
+          }
+        });
+
+        const n = freshRelevant.length || 0;
+        const freshAvgPct = n > 0
+          ? freshSums.map(s => (s / n) * 100)
+          : [0, 0];
+
+        const makeLegendLabelsWithPct = (chart) => {
+          const data = chart.data;
+          return data.labels.map((label, i) => {
+            const v = data.datasets[0].data[i] || 0;
+            return {
+              text: `${label}: ${v.toFixed(1)}%`,
+              fillStyle: data.datasets[0].backgroundColor[i],
+              strokeStyle: data.datasets[0].borderColor,
+              lineWidth: 1,
+              hidden: false,
+              index: i,
+              fontColor: "#e5e9ff"
+            };
+          });
+        };
+
+
+      if (!freshDonutChart) {
+        freshDonutChart = new Chart(donutFreshCtx, {
+          type: "doughnut",
+          data: {
+            labels: freshLabels,
+          datasets: [{
+            data: freshAvgPct,
+            backgroundColor: ["#62ab81", "#454545"],
+            borderColor: "#141414",
+            borderWidth: 1
+          }]
+        },
+        options: {
+          plugins: {
+            legend: {
+              display: true,
+              labels: {
+                color: "#e5e9ff",
+                font: { size: 10 },
+                generateLabels: (chart) => makeLegendLabelsWithPct(chart)
+              }
+            },
+            tooltip: {
+              callbacks: {
+                label: (ctx) => `${ctx.label}: ${Number(ctx.raw).toFixed(1)}%`
+              }
+            }
+          },
+          cutout: "65%"
+        }
+      });
+    } else {
+      freshDonutChart.data.labels = freshLabels;
+      freshDonutChart.data.datasets[0].data = freshAvgPct;
+
+      // ensure legend updates with the new %
+      freshDonutChart.options.plugins.legend.labels.generateLabels =
+        (chart) => makeLegendLabelsWithPct(chart);
+
+      freshDonutChart.update();
+    }
+  }
+
+
+        const trendCtx = document.getElementById("bloomTrendChart");
+        if (trendCtx) {
+        // ✅ v13-style: show recent bloom runs over time (up/down line)
+        const bloomHistory = predictionHistory.filter(p => p.model === "bloom");
+
+        // show the last N bloom predictions (like v13 session timeline)
+        const N = 12;
+        const recent = bloomHistory.slice(-N);
+
+        const labels = recent.map(p =>
+          new Date(p.time).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
+        );
+
+        // Discrete severity like v13: 0=no bloom, 1=light, 2=heavy
+        const severityData = recent.map(p => {
+          if (p.classIndex === 0) return 2; // Heavy
+          if (p.classIndex === 1) return 1; // Light
+          return 0;                         // No bloom
+        });
+
+        if (!bloomTrendChart) {
+          bloomTrendChart = new Chart(trendCtx, {
+            type: "line",
+            data: {
+              labels,
+              datasets: [{
+                label: t.chartSeverityLabel || "Bloom severity",
+                data: severityData,
+                tension: 0.35,
+                fill: true,
+                borderWidth: 2,
+                borderColor: "#62ab81",
+                backgroundColor: "rgba(98,171,129,0.18)",
+                pointRadius: 3,
+                pointHoverRadius: 5
+              }]
+            },
+            options: {
+              responsive: true,
+              maintainAspectRatio: false,
+              plugins: { legend: { display: false } },
+              scales: {
+                x: {
+                  ticks: {
+                    color: "#e5e9ff",
+                    font: { size: 10 },
+                    maxRotation: 45,
+                    minRotation: 45
+                  },
+                  grid: { color: "rgba(255,255,255,0.05)" }
+                },
+                y: {
+                  min: 0,
+                  max: 2,
+                  ticks: {
+                    stepSize: 1,
+                    color: "#e5e9ff",
+                    font: { size: 10 },
+                    callback: function (value) {
+                      if (value === 0) return t.trendLabelNone || "No bloom";
+                      if (value === 1) return t.trendLabelLight || "Light";
+                      if (value === 2) return t.trendLabelHeavy || "Heavy";
+                      return value;
+                    }
+                  },
+                  grid: { color: "rgba(255,255,255,0.08)" }
+                }
+              }
+            }
+          });
+        } else {
+          bloomTrendChart.data.labels = labels;
+          bloomTrendChart.data.datasets[0].data = severityData;
+          bloomTrendChart.data.datasets[0].label = t.chartSeverityLabel || "Bloom severity";
+
+          // ✅ IMPORTANT: refresh the y-axis text callback so it re-translates
+          if (bloomTrendChart.options?.scales?.y?.ticks) {
+            bloomTrendChart.options.scales.y.ticks.callback = function (value) {
+              if (value === 0) return t.trendLabelNone || "No bloom";
+              if (value === 1) return t.trendLabelLight || "Light";
+              if (value === 2) return t.trendLabelHeavy || "Heavy";
+              return value;
+            };
+          }
+
+          bloomTrendChart.update();
+        }
+      }
+
+        // --- MODEL CERTAINTY INDEX (High / Medium / Low confidence) ---
+        const certCtx = document.getElementById("certaintyChart");
+          if (certCtx) {
+          const totalRuns = predictionHistory.length;
+
+        let high = 0, med = 0, low = 0;
+
+        predictionHistory.forEach(p => {
+          const c = typeof p.confidence === "number" ? p.confidence : null; // 0..1
+            if (c == null) return;
+            if (c >= 0.80) high++;
+            else if (c >= 0.50) med++;
+            else low++;
+          });
+
+        const pct = (x) => totalRuns > 0 ? (x / totalRuns) * 100 : 0;
+
+        const highPct = pct(high);
+        const medPct  = pct(med);
+        const lowPct  = pct(low);
+
+        const data = {
+        labels: [t.certaintyBarLabel || "Certainty"],
+        datasets: [
+          { label: t.certHigh || "High (≥80%)",    data: [highPct], backgroundColor: "#62ab81", borderWidth: 0, borderRadius: 8 },
+          { label: t.certMed  || "Medium (50–80%)", data: [medPct],  backgroundColor: "rgba(98,171,129,0.45)", borderWidth: 0, borderRadius: 8 },
+          { label: t.certLow  || "Low (<50%)",     data: [lowPct],  backgroundColor: "#454545", borderWidth: 0, borderRadius: 8 }
+        ]
+      };
+
+        const options = {
+          indexAxis: "y",
+          plugins: {
+            legend: {
+              position: "top",
+              align: "start",
+              labels: {
+                color: "#e5e9ff",
+                font: { size: 10 },
+                boxWidth: 18,
+                padding: 16,
+                usePointStyle: false
+              }
+            },
+            tooltip: {
+              callbacks: {
+              label: (ctx) => `${ctx.dataset.label}: ${Number(ctx.raw).toFixed(1)}%`
+            }
+          }
+        },
+          responsive: true,
+          maintainAspectRatio: false,
+          scales: {
+            x: {
+              stacked: true,
+              min: 0,
+              max: 100,
+              ticks: {
+                color: "#e5e9ff",
+                callback: (v) => v + "%"
+              },
+              grid: { color: "rgba(255,255,255,0.08)" }
+            },
+            y: {
+              stacked: true,
+              ticks: { color: "#e5e9ff" },
+              grid: { display: false }
+            }
+          }
+        };
+
+        if (!certaintyChart) {
+          certaintyChart = new Chart(certCtx, { type: "bar", data, options });
+        } else {
+          certaintyChart.data = data;
+          certaintyChart.options = options;
+          certaintyChart.update();
+        }
+      }
+
+      }
+
+      /* --------- GALLERY --------- */
+      function addToGallery(dataUrl) {
+        galleryImages.unshift({ src: dataUrl, time: Date.now() });
+        renderGallery();
+        return 0;
+      }
+
+      function renderGallery() {
+        const grid = document.getElementById("galleryGrid");
+        if (!grid) return;
+
+        const t = getTranslation(currentLanguage);
+        grid.innerHTML = "";
+        populateRegionOptions();
+
+        let filtered = galleryImages
+        .map((item, idx) => ({ item, idx }))
+        .filter(({ item }) => matchesGalleryFilters(item));
+
+        filtered.sort((a, b) => {
+          if (galleryFilters.sort === "oldest") return a.item.time - b.item.time;
+          return b.item.time - a.item.time; // most recent
+        });
+
+
+        if (filtered.length === 0) {
+          const msg = document.createElement("p");
+          msg.className = "helper-text";
+          msg.textContent = galleryImages.length === 0
+            ? (t.galleryEmptyNone || "No images yet — upload one in the classifier to start your gallery.")
+            : (t.galleryEmptyFilter || "No images match this filter.");
+          grid.appendChild(msg);
+          return;
+        }
+
+        filtered.forEach(({ item, idx }) => {
+          const wrapper = document.createElement("div");
+          wrapper.className = "gallery-item";
+          wrapper.addEventListener("click", () => openGalleryDetail(idx));
+
+          const img = document.createElement("img");
+          img.className = "gallery-thumb";
+          img.src = item.src;
+          img.alt = "Uploaded sargassum image";
+
+          const meta = document.createElement("div");
+          meta.className = "gallery-meta";
+
+          const chip = document.createElement("span");
+          chip.className = "gallery-chip";
+
+          let chipLabel = "";
+          let chipClass = "";
+
+          if (item.model === "bloom" && typeof item.classIndex === "number") {
+            chipLabel = (t.classesBloom[item.classIndex] || "").toUpperCase();
+            if (item.classIndex === 0) chipClass = "chip-heavy";
+            else if (item.classIndex === 1) chipClass = "chip-light";
+            else chipClass = "chip-nobloom";
+          } else if (item.model === "fresh" && typeof item.classIndex === "number") {
+            chipLabel = (t.classesFresh[item.classIndex] || "").toUpperCase();
+            chipClass = item.classIndex === 0 ? "chip-fresh" : "chip-dry";
+          } else {
+            chipLabel = t.pendingLabel || "PENDING";
+          }
+
+          if (chipClass) chip.classList.add(chipClass);
+          chip.textContent = chipLabel;
+
+          const timeSpan = document.createElement("span");
+          timeSpan.className = "gallery-time";
+
+          if (item.country) {
+          timeSpan.textContent = item.country;
+          } else {
+          timeSpan.textContent = "";
+          }
+
+          meta.appendChild(chip);
+          meta.appendChild(timeSpan);
+
+          wrapper.appendChild(img);
+          wrapper.appendChild(meta);
+          grid.appendChild(wrapper);
+        });
+      }
+
+      function getDateCutoffMs(range) {
+        const now = Date.now();
+          if (range === "24h") return now - 24 * 60 * 60 * 1000;
+          if (range === "7d") return now - 7 * 24 * 60 * 60 * 1000;
+          if (range === "30d") return now - 30 * 24 * 60 * 60 * 1000;
+          return null; // all
+      }
+
+      function matchesGalleryFilters(item) {
+      // Date
+      const cutoff = getDateCutoffMs(galleryFilters.date);
+      if (cutoff != null && item.time < cutoff) return false;
+
+      // Region
+      if (galleryFilters.region !== "any") {
+      if (!item.country || item.country !== galleryFilters.region) return false;
+      }
+
+      // Severity (bloom model only)
+      if (galleryFilters.severity !== "any") {
+        if (item.model !== "bloom" || typeof item.classIndex !== "number") return false;
+        if (galleryFilters.severity === "heavy" && item.classIndex !== 0) return false;
+        if (galleryFilters.severity === "light" && item.classIndex !== 1) return false;
+        if (galleryFilters.severity === "nobloom" && item.classIndex !== 2) return false;
+      }
+
+      // Condition (fresh model only)
+      if (galleryFilters.condition !== "any") {
+      if (item.model !== "fresh" || typeof item.classIndex !== "number") return false;
+      if (galleryFilters.condition === "fresh" && item.classIndex !== 0) return false;
+      if (galleryFilters.condition === "dry" && item.classIndex !== 1) return false;
+      }
+
+      return true;
+      }
+
+      function populateRegionOptions() {
+      const regionSelect = document.getElementById("filterRegion");
+        if (!regionSelect) return;
+
+        const existingAny = regionSelect.querySelector('option[value="any"]');
+        regionSelect.innerHTML = "";
+          if (existingAny) regionSelect.appendChild(existingAny);
+          else {
+          const opt = document.createElement("option");
+          opt.value = "any";
+         opt.id = "optRegionAny";
+          const t = getTranslation(currentLanguage);
+          opt.textContent = t.anyOption || "Any";
+          regionSelect.appendChild(opt);
+          }
+
+        const countries = Array.from(
+        new Set(galleryImages.map(i => i.country).filter(Boolean))
+        ).sort((a,b) => a.localeCompare(b));
+
+        countries.forEach(c => {
+        const opt = document.createElement("option");
+        opt.value = c;
+        opt.textContent = c;
+        regionSelect.appendChild(opt);
+        });
+
+        // keep selection if still valid
+        if (![...regionSelect.options].some(o => o.value === galleryFilters.region)) {
+          galleryFilters.region = "any";
+          regionSelect.value = "any";
+        } else {
+          regionSelect.value = galleryFilters.region;
+        }
+      }
+
+      /* --------- GALLERY DETAIL --------- */
+      function openGalleryDetail(index) {
+        const modal = document.getElementById("galleryDetailModal");
+        const img = document.getElementById("detailImage");
+        const chip = document.getElementById("detailChip");
+        const timeEl = document.getElementById("detailTime");
+        const countryEl = document.getElementById("detailCountry");
+        const modelEl = document.getElementById("detailModel");
+        const confEl = document.getElementById("detailConfidence");
+        if (!modal || !img || !chip) return;
+
+        currentDetailIndex = index;
+        const item = galleryImages[index];
+        const t = getTranslation(currentLanguage);
+
+        img.src = item.src;
+
+        chip.className = "detail-chip";
+        let chipLabel = t.pendingLabel || "PENDING";
+        if (item.model === "bloom" && typeof item.classIndex === "number") chipLabel = t.classesBloom[item.classIndex] || chipLabel;
+        if (item.model === "fresh" && typeof item.classIndex === "number") chipLabel = t.classesFresh[item.classIndex] || chipLabel;
+        chip.textContent = chipLabel.toUpperCase();
+
+        const when = new Date(item.time).toLocaleString([], { hour: "2-digit", minute: "2-digit" });
+        if (timeEl) timeEl.textContent = when;
+
+        if (countryEl) countryEl.textContent = item.country ? item.country : "—";
+        if (modelEl) modelEl.textContent = item.model ? item.model.toUpperCase() : "—";
+
+        if (confEl) {
+          confEl.textContent = (typeof item.confidence === "number")
+            ? `${Math.round(item.confidence * 100)}%`
+            : "—";
+        }
+
+        const breakdown = document.getElementById("detailProbBreakdown");
+        if (breakdown) {
+          const labels = item.labels || [];
+          const probs = item.probs || [];
+
+          if (!labels.length || !probs.length) {
+            breakdown.innerHTML = "";
+          } else {
+            breakdown.innerHTML = labels.map((name, i) => {
+              const pct = ((probs[i] || 0) * 100);
+              const pctText = pct.toFixed(1);
+
+              return `
+                <div class="prediction-row">
+                  <div class="prediction-header">
+                    <span class="class-name">${String(name).toUpperCase()}</span>
+                    <span class="percent">${pctText}%</span>
+                  </div>
+                  <div class="prediction-bar">
+                    <div class="prediction-bar-fill" style="width:${pctText}%"></div>
+                  </div>
+                </div>
+              `;
+            }).join("");
+          }
+        }
+
+        updateDetailLocationLabel();
+        modal.style.display = "flex";
+        positionDetailNavButtons();
+        setTimeout(positionDetailNavButtons, 0);
+        updateDetailNavButtons();
+      }
+
+      function getVisibleGalleryIndices() {
+        // Build the same list as renderGallery(): filtered + sorted
+        let list = galleryImages
+          .map((item, idx) => ({ item, idx }))
+          .filter(({ item }) => matchesGalleryFilters(item));
+
+        list.sort((a, b) => {
+          if (galleryFilters.sort === "oldest") return a.item.time - b.item.time;
+          return b.item.time - a.item.time; // recent first
+        });
+
+        return list.map(x => x.idx); // indices into galleryImages
+      }
+
+      function updateDetailNavButtons() {
+        const prevBtn = document.getElementById("detailPrevBtn");
+        const nextBtn = document.getElementById("detailNextBtn");
+          const modal = document.getElementById("galleryDetailModal");
+        if (!prevBtn || !nextBtn || !modal || modal.style.display !== "flex") return;
+
+          const visible = getVisibleGalleryIndices();
+          const pos = visible.indexOf(currentDetailIndex);
+
+        prevBtn.disabled = (pos <= 0);
+        nextBtn.disabled = (pos === -1 || pos >= visible.length - 1);
+      }
+
+      function navigateDetail(step) {
+        const modal = document.getElementById("galleryDetailModal");
+          if (!modal || modal.style.display !== "flex") return;
+
+        const visible = getVisibleGalleryIndices();
+        const pos = visible.indexOf(currentDetailIndex);
+          if (pos === -1) return;
+
+        const newPos = pos + step;
+          if (newPos < 0 || newPos >= visible.length) return;
+
+        openGalleryDetail(visible[newPos]);
+      }
+
+
+      function closeGalleryDetail() {
+        const modal = document.getElementById("galleryDetailModal");
+        if (modal) modal.style.display = "none";
+        currentDetailIndex = null;
+        updateDetailNavButtons();
+      }
+
+      function updateDetailLocationLabel() {
+        const label = document.getElementById("detailLocationLabel");
+        const btn = document.getElementById("openLocationPickerBtn");
+        const item = currentDetailIndex != null ? galleryImages[currentDetailIndex] : null;
+        if (!label || !btn || !item) return;
+
+        const t = getTranslation(currentLanguage);
+        const locPrefix = t.locationPrefix || "Location";
+
+        if (typeof item.lat === "number" && typeof item.lng === "number") {
+          label.textContent = `${locPrefix}: ${item.lat.toFixed(4)}, ${item.lng.toFixed(4)}`;
+          btn.textContent = t.editLocation || "Edit location";
+        } else {
+          label.textContent = `${locPrefix}: ${t.locationNone || "None"}`;
+          btn.textContent = t.addLocation || "Add location";
+        }
+      }
+
+      /* --------- PREDICTION --------- */
+      async function predict(imageElement, galleryIndex = null) {
+        const prediction = await model.predict(imageElement);
+
+        for (let i = 0; i < maxPredictions; i++) {
+          const row = labelContainer.childNodes[i];
+          const header = row.querySelector(".prediction-header");
+          const percentSpan = header.querySelector(".percent");
+          const barFill = row.querySelector(".prediction-bar-fill");
+
+          const prob = (prediction[i].probability * 100).toFixed(1);
+          percentSpan.textContent = prob + "%";
+          barFill.style.width = prob + "%";
+        }
+
+        let bestIdx = 0;
+        let bestProb = -1;
+        for (let i = 0; i < prediction.length; i++) {
+          if (prediction[i].probability > bestProb) {
+            bestProb = prediction[i].probability;
+            bestIdx = i;
+          }
+        }
+
+        if (galleryIndex != null && galleryImages[galleryIndex]) {
+          galleryImages[galleryIndex].model = currentModelKey;
+          galleryImages[galleryIndex].classIndex = bestIdx;
+          galleryImages[galleryIndex].confidence = bestProb;
+          renderGallery();
+        }
+
+        if (galleryIndex != null && galleryImages[galleryIndex]) {
+          const t = getTranslation(currentLanguage);
+
+          galleryImages[galleryIndex].model = currentModelKey;
+          galleryImages[galleryIndex].classIndex = bestIdx;
+          galleryImages[galleryIndex].confidence = bestProb;
+
+          galleryImages[galleryIndex].probs = prediction.map(p => p.probability);     // [0..1, 0..1, ...]
+          galleryImages[galleryIndex].labels =
+            currentModelKey === "fresh"
+              ? (t.classesFresh || prediction.map(p => p.className))
+              : (t.classesBloom || prediction.map(p => p.className));
+
+          renderGallery();
+          }
+        recordPredictionForDashboard(prediction, bestIdx, bestProb);
+      }
+
+      document.getElementById("imageUpload").addEventListener("change", handleImageUpload);
+
+      /* --------- SETTINGS BUTTON & LANGUAGE --------- */
+      function setupSettingsButton() {
+        const settingsBtn = document.querySelector('[data-action="settings"]');
+        const modal = document.getElementById("settingsModal");
+        const closeBtn = document.getElementById("closeSettings");
+        const languageSelect = document.getElementById("languageSelect");
+
+        if (settingsBtn) settingsBtn.addEventListener("click", () => { modal.style.display = "flex"; });
+        if (closeBtn) closeBtn.addEventListener("click", () => { modal.style.display = "none"; });
+
+        if (modal) modal.addEventListener("click", (e) => { if (e.target === modal) modal.style.display = "none"; });
+
+        if (languageSelect) {
+          languageSelect.addEventListener("change", (e) => {
+            const lang = e.target.value;
+            localStorage.setItem("sargiLang", lang);
+            applyLanguage(lang);
+          });
+        }
+      }
+
+      /* --------- DASHBOARD BUTTON --------- */
+      function setupDashboardButton() {
+        const dashboardBtn = document.querySelector('[data-action="dashboard"]');
+        if (!dashboardBtn) return;
+
+        dashboardBtn.addEventListener("click", () => {
+          toggleView("dashboard");
+          setActiveNav(dashboardBtn);
+          updateDashboardStats();
+        });
+      }
+
+      /* --------- GALLERY BUTTON + FILTERS --------- */
+      function setupGalleryButton() {
+        const galleryBtn = document.querySelector('[data-action="gallery"]');
+        if (!galleryBtn) return;
+
+        galleryBtn.addEventListener("click", () => {
+          toggleView("gallery");
+          setActiveNav(galleryBtn);
+          renderGallery();
+        });
+      }
+
+      /* --------- MAP BUTTON --------- */
+      function setupMapButton() {
+        const mapBtn = document.querySelector('[data-action="map"]');
+        if (!mapBtn) return;
+
+        mapBtn.addEventListener("click", () => {
+          setActiveNav(mapBtn);
+          toggleView("map");
+        });
+      }
+
+      /* --------- MODEL SWITCHING --------- */
+      function setupModelSwitching() {
+        const buttons = document.querySelectorAll(".side-menu-item[data-model]");
+
+        buttons.forEach((btn) => {
+          btn.addEventListener("click", () => {
+            const modelKey = btn.getAttribute("data-model");
+            if (!modelFolders[modelKey]) return;
+
+            resetClassifierUI();
+            setActiveNav(btn);
+            toggleView("classifier");
+
+            currentModelKey = modelKey;
+            modelLoaded = false;
+            applyLanguage(currentLanguage);
+            loadModel();
+          });
+        });
+      }
+
+      /* --------- GALLERY DETAIL + LOCATION EVENTS --------- */
+      function setupGalleryDetail() {
+        const modal = document.getElementById("galleryDetailModal");
+        const closeBtn = document.getElementById("detailCloseBtn");
+        const openLocBtn = document.getElementById("openLocationPickerBtn");
+
+        if (closeBtn) closeBtn.addEventListener("click", closeGalleryDetail);
+        if (modal) modal.addEventListener("click", (e) => { if (e.target === modal) closeGalleryDetail(); });
+
+        if (openLocBtn) openLocBtn.addEventListener("click", () => {
+          if (currentDetailIndex == null) return;
+          openLocationPicker();
+        });
+
+        const prevBtn = document.getElementById("detailPrevBtn");
+        const nextBtn = document.getElementById("detailNextBtn");
+
+        if (prevBtn) prevBtn.addEventListener("click", () => navigateDetail(-1));
+        if (nextBtn) nextBtn.addEventListener("click", () => navigateDetail(1));
+
+        // Keyboard navigation (only when modal is open)
+        document.addEventListener("keydown", (e) => {
+          const modal = document.getElementById("galleryDetailModal");
+          const locModal = document.getElementById("locPickerModal");
+          if (!modal || modal.style.display !== "flex") return;
+          if (locModal && locModal.style.display === "flex") return; // don't hijack keys while picking location
+
+          if (e.key === "ArrowLeft") { e.preventDefault(); navigateDetail(-1); }
+          if (e.key === "ArrowRight") { e.preventDefault(); navigateDetail(1); }
+        });
+
+      }
+
+      function setupLocationPicker() {
+        const modal = document.getElementById("locPickerModal");
+        const cancel = document.getElementById("locCancelBtn");
+        const save = document.getElementById("locSaveBtn");
+
+        if (cancel) cancel.addEventListener("click", closeLocationPicker);
+        if (save) save.addEventListener("click", savePickedLocation);
+        if (modal) modal.addEventListener("click", (e) => { if (e.target === modal) closeLocationPicker(); });
+      }
+
+      // Init
+      setupSettingsButton();
+      setupDashboardButton();
+      setupModelSwitching();
+      setupGalleryButton();
+      setupGalleryToolbar();
+      setupMapButton();
+      setupGalleryDetail();
+      setupLocationPicker();
+      initLanguage();
+      loadModel();
+
+      window.addEventListener("resize", positionDetailNavButtons);
+
+      document.addEventListener("DOMContentLoaded", () => {
+        initLanguage();
+
+        const dlBtn = document.getElementById("downloadExcelBtn");
+        if (dlBtn) dlBtn.addEventListener("click", downloadSessionExcel);
+      });
+
+    </script>
+  </body>
+</html>
